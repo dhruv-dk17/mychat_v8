@@ -79,6 +79,25 @@ router.post('/verify-owner', async (req, res) => {
   }
 });
 
+function validateCiphertext(ciphertext) {
+  return Boolean(ciphertext && typeof ciphertext === 'string' && ciphertext.length <= 16000);
+}
+
+function validateEventId(eventId) {
+  return Boolean(eventId && typeof eventId === 'string' && eventId.length <= 128);
+}
+
+async function authorizeRoomByPasswordHash(slug, passwordHash) {
+  if (!validateSlug(slug) || !validateHash(passwordHash)) return null;
+  const room = await pool.query(
+    'SELECT slug, password_hash FROM rooms WHERE slug = $1',
+    [slug.toLowerCase()]
+  );
+  if (!room.rows.length) return null;
+  if (!timingSafeEqual(room.rows[0].password_hash, passwordHash)) return false;
+  return room.rows[0].slug;
+}
+
 // GET /api/rooms/user
 router.get('/user', async (req, res) => {
   const { username, token } = req.query;
@@ -90,6 +109,76 @@ router.get('/user', async (req, res) => {
     res.json({ rooms: r.rows });
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch rooms' });
+  }
+});
+
+// GET /api/rooms/:slug/messages
+router.get('/:slug/messages', async (req, res) => {
+  const slug = req.params.slug?.toLowerCase();
+  const passwordHash = req.get('X-Room-Password-Hash');
+  const sinceId = Number(req.query.sinceId || 0);
+
+  if (!validateSlug(slug)) return res.status(400).json({ error: 'Invalid room ID' });
+  if (!validateHash(passwordHash)) return res.status(400).json({ error: 'Invalid password hash' });
+  if (!Number.isInteger(sinceId) || sinceId < 0) return res.status(400).json({ error: 'Invalid cursor' });
+
+  try {
+    const roomSlug = await authorizeRoomByPasswordHash(slug, passwordHash);
+    if (roomSlug === null) return res.status(404).json({ error: 'Room not found' });
+    if (roomSlug === false) return res.status(403).json({ error: 'Invalid password' });
+
+    const result = await pool.query(
+      `SELECT id, event_id, ciphertext, created_at
+       FROM room_messages
+       WHERE room_slug = $1 AND id > $2
+       ORDER BY id ASC
+       LIMIT 500`,
+      [roomSlug, sinceId]
+    );
+
+    res.json({
+      events: result.rows.map(row => ({
+        cursor: Number(row.id),
+        eventId: row.event_id,
+        ciphertext: row.ciphertext,
+        createdAt: Number(row.created_at)
+      }))
+    });
+  } catch (e) {
+    console.error('Fetch messages error:', e.message);
+    res.status(500).json({ error: 'Failed to fetch room history' });
+  }
+});
+
+// POST /api/rooms/:slug/messages
+router.post('/:slug/messages', async (req, res) => {
+  const slug = req.params.slug?.toLowerCase();
+  const passwordHash = req.get('X-Room-Password-Hash');
+  const { eventId, ciphertext, createdAt } = req.body || {};
+  const safeCreatedAt = Number.isFinite(Number(createdAt)) ? Number(createdAt) : Date.now();
+
+  if (!validateSlug(slug)) return res.status(400).json({ error: 'Invalid room ID' });
+  if (!validateHash(passwordHash)) return res.status(400).json({ error: 'Invalid password hash' });
+  if (!validateEventId(eventId)) return res.status(400).json({ error: 'Invalid event ID' });
+  if (!validateCiphertext(ciphertext)) return res.status(400).json({ error: 'Invalid ciphertext' });
+  if (!Number.isInteger(safeCreatedAt) || safeCreatedAt < 0) return res.status(400).json({ error: 'Invalid timestamp' });
+
+  try {
+    const roomSlug = await authorizeRoomByPasswordHash(slug, passwordHash);
+    if (roomSlug === null) return res.status(404).json({ error: 'Room not found' });
+    if (roomSlug === false) return res.status(403).json({ error: 'Invalid password' });
+
+    await pool.query(
+      `INSERT INTO room_messages (room_slug, event_id, ciphertext, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (room_slug, event_id) DO NOTHING`,
+      [roomSlug, eventId, ciphertext, safeCreatedAt]
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Store message error:', e.message);
+    res.status(500).json({ error: 'Failed to store room history' });
   }
 });
 

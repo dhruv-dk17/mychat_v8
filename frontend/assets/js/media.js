@@ -272,8 +272,8 @@ async function drawWaveform(canvas, blob) {
 
 async function initiateCall() {
   try {
-    if (currentRoomType !== 'private') {
-      showToast('Calling is only supported in Private rooms', 'warning');
+    if (currentRoomType === 'group') {
+      showToast('Calling is not supported in Group rooms', 'warning');
       return;
     }
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });

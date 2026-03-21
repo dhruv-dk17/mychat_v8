@@ -40,8 +40,24 @@ async function initDB() {
       await client.query(`ALTER TABLE rooms ADD COLUMN owner_username VARCHAR(32) REFERENCES users(username) ON DELETE CASCADE`);
     }
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS room_messages (
+        id         BIGSERIAL PRIMARY KEY,
+        room_slug  VARCHAR(8)    NOT NULL REFERENCES rooms(slug) ON DELETE CASCADE,
+        event_id   VARCHAR(128)  NOT NULL,
+        ciphertext TEXT          NOT NULL,
+        created_at BIGINT        NOT NULL
+      )
+    `);
+
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_rooms_slug ON rooms(slug)`
+    );
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_room_messages_room_id ON room_messages(room_slug, id)`
+    );
+    await client.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_unique_event ON room_messages(room_slug, event_id)`
     );
     console.log('✓ Database ready');
   } finally {

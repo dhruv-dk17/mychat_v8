@@ -4,6 +4,20 @@ let messages = [];
 let isMultiSelectMode = false;
 let selectedMessages = new Set();
 
+function hasMessage(messageId) {
+  return Boolean(messageId) && messages.some(msg => msg.id === messageId);
+}
+
+function rememberMessage(msg) {
+  if (!msg?.id) {
+    messages.push(msg);
+    return true;
+  }
+  if (hasMessage(msg.id)) return false;
+  messages.push(msg);
+  return true;
+}
+
 // ── Send text message ─────────────────────────────────────────────
 function sendTextMessage(text) {
   if (!text || !text.trim()) return;
@@ -14,24 +28,27 @@ function sendTextMessage(text) {
     text: text.trim(),
     ts:   Date.now()
   };
-  messages.push(msg);
+  rememberMessage(msg);
   renderMessage(msg, true);
   broadcastOrRelay(msg);
+  if (typeof persistCurrentRoomEvent === 'function') persistCurrentRoomEvent(msg);
 }
 
 // ── Receive text message ──────────────────────────────────────────
 function receiveTextMessage(msg) {
   if (msg.system) { addSystemMessage(msg.text); return; }
-  messages.push(msg);
-  renderMessage(msg, false);
-  playMessageSound();
+  if (!rememberMessage(msg)) return;
+  const isOwn = msg.from === myUsername;
+  renderMessage(msg, isOwn);
+  if (!isOwn) playMessageSound();
 }
 
 // ── Receive rich media ────────────────────────────────────────────
 function receiveRichMedia(msg) {
-  messages.push(msg);
-  renderRichMediaMessage(msg, false);
-  playMessageSound();
+  if (!rememberMessage(msg)) return;
+  const isOwn = msg.from === myUsername;
+  renderRichMediaMessage(msg, isOwn);
+  if (!isOwn) playMessageSound();
 }
 
 // ── Render a message bubble ───────────────────────────────────────
@@ -88,6 +105,21 @@ function addSystemMessage(text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
+function applyPersistedRoomEvent(event) {
+  if (!event?.type) return;
+  switch (event.type) {
+    case 'msg':
+      receiveTextMessage(event);
+      break;
+    case 'delete_msg':
+      deleteMessage(event.messageId);
+      break;
+    case 'clear_chat':
+      executeClearChat(event.from || 'Someone');
+      break;
+  }
+}
+
 // ── Call event rendering ──────────────────────────────────────────
 function renderCallEvent(msg) {
   const feed = document.getElementById('chat-feed');
@@ -127,7 +159,9 @@ function executeClearChat(clearedBy) {
 
 function broadcastClearChat() {
   executeClearChat(myUsername);
-  broadcastOrRelay({ type: 'clear_chat', from: myUsername, ts: Date.now() });
+  const event = { type: 'clear_chat', from: myUsername, ts: Date.now() };
+  broadcastOrRelay(event);
+  if (typeof persistCurrentRoomEvent === 'function') persistCurrentRoomEvent(event);
 }
 
 // ── Delete message ────────────────────────────────────────────────
@@ -142,7 +176,9 @@ function deleteMessage(messageId) {
 
 function sendDeleteMessage(messageId) {
   deleteMessage(messageId);
-  broadcastOrRelay({ type: 'delete_msg', messageId });
+  const event = { type: 'delete_msg', messageId, ts: Date.now() };
+  broadcastOrRelay(event);
+  if (typeof persistCurrentRoomEvent === 'function') persistCurrentRoomEvent(event);
 }
 
 // ── Multi-select logic ────────────────────────────────────────────

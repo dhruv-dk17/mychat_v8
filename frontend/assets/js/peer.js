@@ -12,6 +12,10 @@ let roomKey = '';
 let roomKeyCandidates = [];
 let pendingJoins = new Map(); // peerId -> conn
 let acceptedPeers = new Set(); // peerId
+let hostPeerIdForRoom = '';
+let permanentRoomPassword = '';
+let permanentReconnectTimer = null;
+let reconnectInFlight = false;
 
 // ── Load PeerJS lazily ────────────────────────────────────────────
 async function loadPeerJS() {
@@ -54,6 +58,9 @@ async function initAsHost(peerId, username, roomId, keyForE2EE, fallbackRoomKeys
   myRole = 'host';
   myUsername = username;
   currentRoomId = roomId;
+  hostPeerIdForRoom = peerId;
+  permanentRoomPassword = '';
+  stopPermanentReconnectLoop();
   setRoomKeys(keyForE2EE || roomId, fallbackRoomKeys);
 
   peerInstance = new Peer(peerId, CONFIG.PEERJS_CONFIG);
@@ -72,18 +79,33 @@ async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwor
   myRole = 'guest';
   myUsername = username;
   currentRoomId = roomId;
+  hostPeerIdForRoom = hostPeerIdStr;
+  permanentRoomPassword = passwordForPerm || '';
+  stopPermanentReconnectLoop();
   setRoomKeys(keyForE2EE || roomId, fallbackRoomKeys);
 
   peerInstance = new Peer(myPeerIdStr, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', () => {
     showModal('waiting-host-modal');
-    initiateHandshake(hostPeerIdStr, passwordForPerm);
+    initiateHandshake(hostPeerIdStr, passwordForPerm, true);
   });
   peerInstance.on('call', handleIncomingCall);
-  peerInstance.on('error', handlePeerError);
+  peerInstance.on('error', err => {
+    if (err?.type === 'peer-unavailable' && currentRoomType === 'permanent') {
+      reconnectInFlight = false;
+      hideModal('waiting-host-modal');
+      showToast('Host is offline. Staying in the room and retrying...', 'warning');
+      schedulePermanentReconnect();
+      return;
+    }
+    handlePeerError(err);
+  });
 }
 
-function initiateHandshake(hostId, password) {
+function initiateHandshake(hostId, password, showWaitingModal = false) {
+  if (!peerInstance || reconnectInFlight) return;
+  reconnectInFlight = true;
+  if (showWaitingModal) showModal('waiting-host-modal');
   const conn = peerInstance.connect(hostId, { reliable: true });
   setupConnection(conn);
   conn.on('open', async () => {
@@ -93,6 +115,30 @@ function initiateHandshake(hostId, password) {
     if (password) req.passwordHash = await sha256(password);
     conn.send(JSON.stringify(req));
   });
+  const clearReconnectFlag = () => { reconnectInFlight = false; };
+  conn.on('close', clearReconnectFlag);
+  conn.on('error', clearReconnectFlag);
+}
+
+function stopPermanentReconnectLoop() {
+  reconnectInFlight = false;
+  if (permanentReconnectTimer) {
+    clearInterval(permanentReconnectTimer);
+    permanentReconnectTimer = null;
+  }
+}
+
+function schedulePermanentReconnect() {
+  if (currentRoomType !== 'permanent' || myRole === 'host' || !hostPeerIdForRoom || !peerInstance) return;
+  if (permanentReconnectTimer) return;
+  permanentReconnectTimer = setInterval(() => {
+    const hostConn = connectedPeers.get(hostPeerIdForRoom)?.conn;
+    if (hostConn?.open) {
+      stopPermanentReconnectLoop();
+      return;
+    }
+    initiateHandshake(hostPeerIdForRoom, permanentRoomPassword, false);
+  }, CONFIG.PERMANENT_RECONNECT_MS);
 }
 
 // ── Handle incoming connections (HOST side) ───────────────────────
@@ -212,8 +258,10 @@ function handleIncomingMessage(msg, conn) {
   }
 
   if (msg.type === 'join_response') {
+    reconnectInFlight = false;
     hideModal('waiting-host-modal');
     if (msg.accepted) {
+      stopPermanentReconnectLoop();
       showToast('Joined room!', 'success');
       updateConnectionUI('connected');
     } else {
@@ -327,15 +375,31 @@ function handlePeerDisconnect(peerId) {
   if (!p) return;
   connectedPeers.delete(peerId);
   removeUserFromPanel(peerId);
-  addSystemMessage(`${p.username} left`);
-  broadcastUserList();
+  addSystemMessage(p.role === 'host' && currentRoomType === 'permanent'
+    ? `${p.username} disconnected`
+    : `${p.username} left`);
+  if (myRole === 'host') broadcastUserList();
   updateOnlineCount();
-  if (p.role === 'host') considerHostTransfer();
+  if (p.role !== 'host') return;
+
+  if (currentRoomType === 'private') {
+    showRoomEndedModal();
+    return;
+  }
+
+  if (currentRoomType === 'permanent') {
+    hideModal('waiting-host-modal');
+    showToast('Host is offline. The room stays open and will reconnect automatically.', 'warning');
+    schedulePermanentReconnect();
+    return;
+  }
+
+  considerHostTransfer();
 }
 
 // ── Host transfer ─────────────────────────────────────────────────
 function considerHostTransfer() {
-  if (myRole === 'host') return;
+  if (myRole === 'host' || currentRoomType === 'permanent') return;
   const all = [...connectedPeers.keys(), peerInstance.id].sort();
   if (all[0] === peerInstance.id) becomeHost();
 }
@@ -379,9 +443,12 @@ function lockRoom() {
   showToast(isRoomLocked ? 'Room locked — no new connections' : 'Room unlocked', 'info');
 }
 
-function endRoom() {
+function endRoom(shouldNavigateHome = true) {
   broadcastToPeers({ type: 'room_end' });
-  setTimeout(() => { destroyPeer(); navigateHome(); }, 600);
+  setTimeout(() => {
+    destroyPeer();
+    if (shouldNavigateHome) navigateHome();
+  }, 600);
 }
 
 // ── Ping manager ──────────────────────────────────────────────────
@@ -445,11 +512,14 @@ function syncUserList(users) {
 
 // ── Destroy peer cleanly ──────────────────────────────────────────
 function destroyPeer() {
+  stopPermanentReconnectLoop();
   try {
     broadcastToPeers({ type: 'user_left', username: myUsername });
   } catch (e) { }
   connectedPeers.forEach(({ conn }) => { try { conn.close(); } catch (e) { } });
   connectedPeers.clear();
+  hostPeerIdForRoom = '';
+  permanentRoomPassword = '';
   if (peerInstance) {
     try { peerInstance.destroy(); } catch (e) { }
     peerInstance = null;

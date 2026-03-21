@@ -387,7 +387,8 @@ async function initHomePage() {
       const valid = await verifyRoomPassword(slug, pw);
       if (!valid) { showErr('Incorrect password'); btn.disabled = false; btn.textContent = '→ Join Room'; return; }
       sessionStorage.setItem('joinPassword_' + slug, pw);
-      navigateToChat(slug, 'permanent', name, 'guest');
+      const role = await resolvePermanentRoomRole(slug, 'guest');
+      navigateToChat(slug, 'permanent', name, role);
     } catch (e) {
       showErr('Verification failed — is the server awake?');
       btn.disabled = false; btn.textContent = '→ Join Room';
@@ -416,13 +417,85 @@ async function initHomePage() {
 // CHAT PAGE
 // ════════════════════════════════════════════
 
+let permanentHistoryCursor = 0;
+let permanentHistoryTimer = null;
+let currentPermanentPassword = '';
+let handledPermanentEventIds = new Set();
+
+function stopPermanentHistoryPolling() {
+  if (permanentHistoryTimer) {
+    clearInterval(permanentHistoryTimer);
+    permanentHistoryTimer = null;
+  }
+}
+
+async function persistCurrentRoomEvent(event) {
+  if (currentRoomType !== 'permanent' || !currentRoomId || !currentPermanentPassword) return;
+  const eventId = buildPermanentEventId(event);
+  try {
+    if (eventId) handledPermanentEventIds.add(eventId);
+    await persistPermanentRoomEvent(currentRoomId, currentPermanentPassword, event);
+  } catch (e) {
+    if (eventId) handledPermanentEventIds.delete(eventId);
+    console.warn('Failed to persist permanent room event', e);
+  }
+}
+
+async function loadPermanentHistoryOnce(roomId, password) {
+  if (!roomId || !password) return;
+  try {
+    while (true) {
+      const events = await fetchPermanentRoomEvents(roomId, password, permanentHistoryCursor);
+      if (!events.length) break;
+      for (const event of events) {
+        permanentHistoryCursor = Math.max(permanentHistoryCursor, event.cursor || 0);
+        if (event.eventId && handledPermanentEventIds.has(event.eventId)) continue;
+        if (event.eventId) handledPermanentEventIds.add(event.eventId);
+        const decrypted = await aesDecrypt(password, event.ciphertext);
+        const payload = JSON.parse(decrypted);
+        if (typeof applyPersistedRoomEvent === 'function') applyPersistedRoomEvent(payload);
+      }
+      if (events.length < 500) break;
+    }
+  } catch (e) {
+    console.warn('Failed to load permanent room history', e);
+  }
+}
+
+function startPermanentHistoryPolling(roomId, password) {
+  stopPermanentHistoryPolling();
+  permanentHistoryTimer = setInterval(() => {
+    loadPermanentHistoryOnce(roomId, password);
+  }, CONFIG.PERMANENT_HISTORY_POLL_MS);
+}
+
+function leaveCurrentRoom() {
+  stopPermanentHistoryPolling();
+  if (currentRoomType === 'private' && myRole === 'host') {
+    endRoom(true);
+    return;
+  }
+  destroyPeer();
+  navigateHome();
+}
+
+function handlePageUnload() {
+  stopPermanentHistoryPolling();
+  if (currentRoomType === 'private' && myRole === 'host') {
+    endRoom(false);
+  } else {
+    destroyPeer();
+  }
+  stopAllMediaStreams();
+}
+
 async function initChatPage() {
   const params = getChatParams();
   if (!params.roomId || !params.username) { navigateHome(); return; }
 
   currentRoomType = params.type || 'private';
   const isPerm  = params.type === 'permanent';
-  const isHost  = params.role === 'host';
+  let isHost  = params.role === 'host';
   const hId     = hostPeerId(params.roomId, isPerm);
   const gId     = guestPeerId(params.roomId, isPerm);
   let storedPermPassword = isPerm ? (sessionStorage.getItem('joinPassword_' + params.roomId) || '') : '';
@@ -446,6 +519,16 @@ async function initChatPage() {
       return;
     }
   }
+
+  if (isPerm) {
+    isHost = await resolvePermanentRoomRole(params.roomId, isHost ? 'host' : 'guest') === 'host';
+    currentPermanentPassword = storedPermPassword;
+  } else {
+    currentPermanentPassword = '';
+  }
+  permanentHistoryCursor = 0;
+  handledPermanentEventIds = new Set();
+  stopPermanentHistoryPolling();
 
   const fallbackRoomKeys = [];
   const e2eeKey = isPerm ? storedPermPassword : (params.key || params.roomId);
@@ -477,6 +560,11 @@ async function initChatPage() {
   } else {
     await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? storedPermPassword : null, e2eeKey, fallbackRoomKeys);
     updateGuestUI();
+  }
+
+  if (isPerm && storedPermPassword) {
+    await loadPermanentHistoryOnce(params.roomId, storedPermPassword);
+    startPermanentHistoryPolling(params.roomId, storedPermPassword);
   }
 
   // Protect chat feed
@@ -527,14 +615,12 @@ async function initChatPage() {
 
   // Leave button
   document.getElementById('leave-btn')?.addEventListener('click', () => {
-    destroyPeer();
-    navigateHome();
+    leaveCurrentRoom();
   });
 
   // Back button
   document.getElementById('back-btn')?.addEventListener('click', () => {
-    destroyPeer();
-    navigateHome();
+    leaveCurrentRoom();
   });
 
   // User panel toggle
@@ -604,7 +690,7 @@ async function initChatPage() {
   });
 
   // Clean up on page hide
-  window.addEventListener('beforeunload', () => { destroyPeer(); stopAllMediaStreams(); });
+  window.addEventListener('beforeunload', handlePageUnload);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) activateBlurShield('Tab switched');
     else                 deactivateBlurShield();
