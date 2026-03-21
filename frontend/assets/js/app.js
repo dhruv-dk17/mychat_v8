@@ -29,12 +29,163 @@ async function initHomePage() {
   // Only Permanent room operations need the backend
   initWithColdStartHandling().catch(() => {});
 
-  // Pre-fill join input from URL hash
+  // Pre-fill join input from URL hash (format: roomId or roomId|key)
   const hash = window.location.hash.slice(1);
   if (hash) {
+    const parts = hash.split('|');
     const el = document.getElementById('join-room-id');
-    if (el) el.value = hash;
+    if (el) el.value = parts[0];
+    if (parts[1]) sessionStorage.setItem('joinKey_' + parts[0], parts[1]);
   }
+
+  // ── User Auth State ──────────────────────────────
+  refreshAuthState();
+
+  document.getElementById('show-auth-btn')?.addEventListener('click', () => {
+    showModal('auth-modal');
+  });
+
+  const dd = document.getElementById('user-profile-dropdown');
+  if (dd) {
+    dd.addEventListener('click', () => {
+      if (confirm('Log out?')) {
+        clearUserSession();
+        refreshAuthState();
+      }
+    });
+  }
+
+  const loginBtn = document.getElementById('auth-login-btn');
+  const regBtn   = document.getElementById('auth-register-btn');
+  const uInput   = document.getElementById('auth-username');
+  const pInput   = document.getElementById('auth-password');
+  const aErr     = document.getElementById('auth-error');
+
+  const handleAuth = async (isLogin) => {
+    const u = uInput?.value.trim();
+    const p = pInput?.value;
+    if (!u || !p) { if (aErr) aErr.textContent = 'Please fill all fields'; return; }
+    
+    loginBtn.disabled = true; regBtn.disabled = true;
+    try {
+      const fn = isLogin ? loginUser : registerUser;
+      const res = await fn(u, p);
+      setUserSession(res.username, res.token);
+      hideModal('auth-modal');
+      showToast('Welcome, ' + res.username, 'success');
+      refreshAuthState();
+    } catch (e) {
+      if (aErr) aErr.textContent = e.message;
+    } finally {
+      loginBtn.disabled = false; regBtn.disabled = false;
+    }
+  };
+
+  loginBtn?.addEventListener('click', () => handleAuth(true));
+  regBtn?.addEventListener('click', () => handleAuth(false));
+
+  function refreshAuthState() {
+    const session = getUserSession();
+    const sBtn = document.getElementById('show-auth-btn');
+    const uDD  = document.getElementById('user-profile-dropdown');
+    const pOut = document.getElementById('perm-logged-out-view');
+    const pIn  = document.getElementById('perm-logged-in-view');
+
+    if (session) {
+      if (sBtn) sBtn.style.display = 'none';
+      if (uDD)  { uDD.style.display = 'block'; uDD.innerHTML = `<span class="user-avatar" style="width:24px;height:24px;font-size:0.7rem;display:inline-flex;margin-right:8px;vertical-align:middle;">${session.username.slice(0,2).toUpperCase()}</span>${session.username} ▼`; }
+      if (pOut) pOut.style.display = 'none';
+      if (pIn)  pIn.style.display = 'block';
+    } else {
+      if (sBtn) sBtn.style.display = 'inline-flex';
+      if (uDD)  uDD.style.display = 'none';
+      if (pOut) pOut.style.display = 'block';
+      if (pIn)  pIn.style.display = 'none';
+    }
+  }
+
+  // ── Dashboard Setup ──────────────────────────────
+  document.getElementById('open-dashboard-btn')?.addEventListener('click', async () => {
+    showModal('dashboard-modal');
+    await loadDashboardRooms();
+  });
+
+  document.getElementById('dashboard-create-btn')?.addEventListener('click', async () => {
+    const slug = document.getElementById('dashboard-new-slug')?.value.trim();
+    const pw   = document.getElementById('dashboard-new-pw')?.value;
+    const btn  = document.getElementById('dashboard-create-btn');
+    const err  = document.getElementById('dashboard-new-error');
+
+    if (!slug || slug.length < 3) { err.textContent = 'Room ID must be 3-8 characters'; return; }
+    if (!pw || pw.length < 4) { err.textContent = 'Password must be at least 4 characters'; return; }
+
+    btn.disabled = true; btn.textContent = 'Registering...';
+    try {
+      await registerPermanentRoom(slug, pw);
+      document.getElementById('dashboard-new-slug').value = '';
+      document.getElementById('dashboard-new-pw').value = '';
+      err.textContent = '';
+      await loadDashboardRooms();
+      showToast('Room ' + slug + ' created!', 'success');
+    } catch (e) {
+      err.textContent = e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '◎ Register & Host';
+    }
+  });
+
+  async function loadDashboardRooms() {
+    const list = document.getElementById('dashboard-rooms-list');
+    if (!list) return;
+    list.innerHTML = '<center>Loading...</center>';
+    try {
+      const rooms = await fetchUserRooms();
+      if (rooms.length === 0) {
+        list.innerHTML = '<center style="color:var(--text-dim);font-size:0.85rem;">You have no active rooms.</center>';
+        return;
+      }
+      
+      list.innerHTML = '';
+      rooms.forEach(r => {
+        const d = document.createElement('div');
+        d.style = 'display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:0.75rem; border-radius:var(--r-md);';
+        d.innerHTML = `
+          <div style="font-weight:600; font-family:var(--ff-mono);">${r.slug}</div>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-ghost btn-sm" onclick="joinDashboardRoom('${r.slug}')">Host / Join</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="attemptDeleteRoom('${r.slug}')">🗑</button>
+          </div>
+        `;
+        list.appendChild(d);
+      });
+    } catch (e) {
+      list.innerHTML = '<center style="color:var(--red);">Failed to load rooms</center>';
+    }
+  }
+
+  window.joinDashboardRoom = (slug) => {
+    const pw = prompt('Enter room password to join/host:');
+    if (!pw) return;
+    const session = getUserSession();
+    // Use session username as joining name, or 'Host' if host
+    // We will just verify the password and join as host if they own it, but practically they are host if they have the password.
+    verifyRoomPassword(slug, pw).then(valid => {
+      if (valid) navigateToChat(slug, 'permanent', session ? session.username : 'User', 'host');
+      else showToast('Incorrect password', 'error');
+    }).catch(() => showToast('Error joining', 'error'));
+  };
+
+  window.attemptDeleteRoom = async (slug) => {
+    if (confirm(`Are you sure you want to PERMANENTLY delete room "${slug}"?`)) {
+      try {
+        await deleteUserRoom(slug);
+        showToast('Room deleted', 'success');
+        loadDashboardRooms();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+  };
 
   // ── Private Room ─────────────────────────────
   document.getElementById('create-private-btn')?.addEventListener('click', async () => {
@@ -42,7 +193,8 @@ async function initHomePage() {
     btn.disabled = true; btn.textContent = 'Creating...';
     const room = createTempRoom('private');
     const username = 'Host_' + randomToken(2);
-    navigateToChat(room.id, 'private', username, 'host');
+    const key = randomToken(16);
+    navigateToChat(room.id, 'private', username, 'host', key);
   });
 
   document.getElementById('join-private-btn')?.addEventListener('click', async () => {
@@ -51,14 +203,16 @@ async function initHomePage() {
       showToast('Enter a valid Room ID', 'warning'); return;
     }
     const username = document.getElementById('join-username')?.value.trim() || 'Guest_' + randomToken(2);
-    navigateToChat(id, 'private', username, 'guest');
+    const key = sessionStorage.getItem('joinKey_' + id) || '';
+    navigateToChat(id, 'private', username, 'guest', key);
   });
 
   // ── Group Room ───────────────────────────────
   document.getElementById('create-group-btn')?.addEventListener('click', () => {
     const room = createTempRoom('group');
     const username = 'Host_' + randomToken(2);
-    navigateToChat(room.id, 'group', username, 'host');
+    const key = randomToken(16);
+    navigateToChat(room.id, 'group', username, 'host', key);
   });
 
   document.getElementById('join-group-btn')?.addEventListener('click', () => {
@@ -66,7 +220,8 @@ async function initHomePage() {
     const name = document.getElementById('join-group-username')?.value.trim();
     if (!id)   { showToast('Enter Room ID', 'warning'); return; }
     if (!name) { showToast('Enter a username', 'warning'); return; }
-    navigateToChat(id, 'group', name, 'guest');
+    const key = sessionStorage.getItem('joinKey_' + id) || '';
+    navigateToChat(id, 'group', name, 'guest', key);
   });
 
   // ── Permanent Room — availability check ──────
@@ -205,7 +360,11 @@ async function initChatPage() {
   const ridEl = document.getElementById('room-id-display');
   if (ridEl) {
     ridEl.textContent = params.roomId;
-    ridEl.addEventListener('click', () => copyToClipboard(params.roomId));
+    ridEl.addEventListener('click', () => {
+      let copyStr = window.location.origin + '/index.html#' + params.roomId;
+      if (params.key && params.type !== 'permanent') copyStr += '|' + params.key;
+      copyToClipboard(params.type === 'permanent' ? params.roomId : copyStr);
+    });
   }
   const badge = document.querySelector('.room-type-badge');
   if (badge) badge.textContent = (params.type || 'PRIVATE').toUpperCase();
@@ -221,11 +380,11 @@ async function initChatPage() {
 
   // Init peer
   if (isHost) {
-    await initAsHost(hId, params.username, params.roomId);
+    await initAsHost(hId, params.username, params.roomId, params.key);
     updateHostUI();
   } else {
     const pw = sessionStorage.getItem('joinPassword_' + params.roomId) || '';
-    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? pw : null);
+    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? pw : null, params.key);
     updateGuestUI();
   }
 
@@ -316,7 +475,9 @@ async function initChatPage() {
 
   // Copy room ID icon in top bar
   document.getElementById('copy-room-btn')?.addEventListener('click', () => {
-    copyToClipboard(params.roomId);
+    let copyStr = window.location.origin + '/index.html#' + params.roomId;
+    if (params.key && params.type !== 'permanent') copyStr += '|' + params.key;
+    copyToClipboard(params.type === 'permanent' ? params.roomId : copyStr);
   });
 
   // Call bar: mute / end
@@ -344,7 +505,8 @@ async function initChatPage() {
 
   // QR code button
   document.getElementById('qr-btn')?.addEventListener('click', () => {
-    const url = window.location.origin + '/chat.html?roomId=' + params.roomId + '&type=' + params.type;
+    let url = window.location.origin + '/index.html#' + params.roomId;
+    if (params.key && params.type !== 'permanent') url += '|' + params.key;
     const qr  = document.getElementById('qr-container');
     if (qr && window.QRCode) {
       qr.innerHTML = '';

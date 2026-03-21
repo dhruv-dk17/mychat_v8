@@ -25,14 +25,21 @@ router.get('/check/:slug', async (req, res) => {
 
 // POST /api/rooms/register
 router.post('/register', registerLimiter, async (req, res) => {
-  const { slug, passwordHash, ownerTokenHash } = req.body;
+  const { slug, passwordHash, ownerTokenHash, username, token } = req.body;
   if (!validateSlug(slug))           return res.status(400).json({ error: 'Invalid room ID' });
   if (!validateHash(passwordHash))   return res.status(400).json({ error: 'Invalid password hash' });
   if (!validateHash(ownerTokenHash)) return res.status(400).json({ error: 'Invalid owner token hash' });
+  
+  let ownerUsername = null;
   try {
+    if (username && token) {
+      const u = await pool.query('SELECT username FROM users WHERE username = $1 AND token = $2', [username.toLowerCase(), token]);
+      if (u.rows.length) ownerUsername = u.rows[0].username;
+    }
+  
     await pool.query(
-      'INSERT INTO rooms (slug, password_hash, owner_token_hash, created_at) VALUES ($1, $2, $3, $4)',
-      [slug.toLowerCase(), passwordHash, ownerTokenHash, Date.now()]
+      'INSERT INTO rooms (slug, password_hash, owner_token_hash, owner_username, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [slug.toLowerCase(), passwordHash, ownerTokenHash, ownerUsername, Date.now()]
     );
     res.json({ success: true, slug: slug.toLowerCase() });
   } catch (e) {
@@ -69,6 +76,36 @@ router.post('/verify-owner', async (req, res) => {
   } catch (e) {
     console.error('Verify-owner error:', e.message);
     res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// GET /api/rooms/user
+router.get('/user', async (req, res) => {
+  const { username, token } = req.query;
+  if (!username || !token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const u = await pool.query('SELECT username FROM users WHERE username = $1 AND token = $2', [username.toLowerCase(), token]);
+    if (!u.rows.length) return res.status(401).json({ error: 'Unauthorized' });
+    const r = await pool.query('SELECT slug, created_at FROM rooms WHERE owner_username = $1 ORDER BY created_at DESC', [username.toLowerCase()]);
+    res.json({ rooms: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch rooms' });
+  }
+});
+
+// DELETE /api/rooms/:slug
+router.delete('/:slug', async (req, res) => {
+  const slug = req.params.slug?.toLowerCase();
+  const { username, token } = req.query;
+  if (!username || !token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const u = await pool.query('SELECT username FROM users WHERE username = $1 AND token = $2', [username.toLowerCase(), token]);
+    if (!u.rows.length) return res.status(401).json({ error: 'Unauthorized' });
+    const del = await pool.query('DELETE FROM rooms WHERE slug = $1 AND owner_username = $2 RETURNING slug', [slug, username.toLowerCase()]);
+    if (!del.rows.length) return res.status(404).json({ error: 'Room not found or unauthorized' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Deletion failed' });
   }
 });
 

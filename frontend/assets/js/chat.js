@@ -1,6 +1,8 @@
 'use strict';
 
 let messages = [];
+let isMultiSelectMode = false;
+let selectedMessages = new Set();
 
 // ── Send text message ─────────────────────────────────────────────
 function sendTextMessage(text) {
@@ -25,6 +27,13 @@ function receiveTextMessage(msg) {
   playMessageSound();
 }
 
+// ── Receive rich media ────────────────────────────────────────────
+function receiveRichMedia(msg) {
+  messages.push(msg);
+  renderRichMediaMessage(msg, false);
+  playMessageSound();
+}
+
 // ── Render a message bubble ───────────────────────────────────────
 function renderMessage(msg, isOwn) {
   const feed = document.getElementById('chat-feed');
@@ -46,7 +55,17 @@ function renderMessage(msg, isOwn) {
     </div>
     <span class="msg-time">${fmtTime(msg.ts)}</span>
     <div class="msg-reactions" id="reactions-${msg.id}"></div>
+    <div class="msg-checkbox" style="display:none; position:absolute; top:-5px; left:-5px; width:20px; height:20px; background:var(--primary); border-radius:50%; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:bold; border:2px solid var(--surface-low); z-index:10; pointer-events:none;">✓</div>
   `;
+
+  // Click handler for multi-select
+  el.addEventListener('click', e => {
+    if (isMultiSelectMode && isOwn) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMessageSelection(msg.id, el);
+    }
+  });
 
   // Context menu
   el.addEventListener('contextmenu', e => { e.preventDefault(); showContextMenu(e, msg, isOwn); });
@@ -59,13 +78,38 @@ function renderMessage(msg, isOwn) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-// ── System message ────────────────────────────────────────────────
 function addSystemMessage(text) {
   const feed = document.getElementById('chat-feed');
   if (!feed) return;
   const el = document.createElement('div');
   el.className = 'msg-system';
   el.textContent = text;
+  feed.appendChild(el);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// ── Call event rendering ──────────────────────────────────────────
+function renderCallEvent(msg) {
+  const feed = document.getElementById('chat-feed');
+  if (!feed) return;
+  const el = document.createElement('div');
+  el.className = 'msg-system msg-call-event';
+  
+  let content = '';
+  if (msg.event === 'missed') {
+    content = msg.isOwnCall !== false 
+      ? '📞 You missed a call' 
+      : '📞 Missed call <button class="btn btn-primary btn-sm" style="margin-left:8px;padding:2px 8px;font-size:11px;" onclick="initiateCall()">Call Back</button>';
+  } else if (msg.event === 'started') {
+    content = '📞 Voice call started';
+  } else if (msg.event === 'ended') {
+    const mins = Math.floor((msg.durationSecs || 0) / 60);
+    const secs = (msg.durationSecs || 0) % 60;
+    const durStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    content = `📞 Video call ended · ${durStr}`;
+  }
+  
+  el.innerHTML = `<span>${content}</span>`;
   feed.appendChild(el);
   feed.scrollTop = feed.scrollHeight;
 }
@@ -100,6 +144,49 @@ function sendDeleteMessage(messageId) {
   deleteMessage(messageId);
   broadcastOrRelay({ type: 'delete_msg', messageId });
 }
+
+// ── Multi-select logic ────────────────────────────────────────────
+function enterMultiSelectMode(initialMsgId, el) {
+  isMultiSelectMode = true;
+  selectedMessages.clear();
+  document.getElementById('multi-select-bar').style.display = 'flex';
+  if (initialMsgId && el) toggleMessageSelection(initialMsgId, el);
+}
+
+function toggleMessageSelection(msgId, el) {
+  if (selectedMessages.has(msgId)) {
+    selectedMessages.delete(msgId);
+    el.querySelector('.msg-checkbox').style.display = 'none';
+    el.style.opacity = '1';
+  } else {
+    selectedMessages.add(msgId);
+    el.querySelector('.msg-checkbox').style.display = 'flex';
+    el.style.opacity = '0.7';
+  }
+  document.getElementById('select-count').textContent = `${selectedMessages.size} selected`;
+}
+
+function exitMultiSelectMode() {
+  isMultiSelectMode = false;
+  selectedMessages.clear();
+  document.getElementById('multi-select-bar').style.display = 'none';
+  document.querySelectorAll('.msg-checkbox').forEach(cb => cb.style.display = 'none');
+  document.querySelectorAll('.msg').forEach(msg => msg.style.opacity = '1');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Bind multi-select buttons if loaded (re-bound later if necessary, but app.js will handle this or we just bind body)
+  document.body.addEventListener('click', e => {
+    if (e.target.id === 'multi-cancel-btn') exitMultiSelectMode();
+    if (e.target.id === 'multi-delete-btn') {
+      if (selectedMessages.size === 0) return;
+      if (confirm(`Delete ${selectedMessages.size} selected messages?`)) {
+        selectedMessages.forEach(id => sendDeleteMessage(id));
+        exitMultiSelectMode();
+      }
+    }
+  });
+});
 
 // ── Typing indicator ──────────────────────────────────────────────
 let _typingTimeout = null;
@@ -197,6 +284,9 @@ function showContextMenu(e, msg, isOwn) {
     { label: '⏱ Set Timer', action: () => { closeContextMenu(); showTimerModal(msg.id); } },
   ];
   if (isOwn) {
+    if (!isMultiSelectMode) {
+      actions.push({ label: '☑ Select', action: () => { enterMultiSelectMode(msg.id, document.querySelector(`[data-msg-id="${msg.id}"]`)); }, danger: false });
+    }
     actions.push({ label: '🗑 Delete', action: () => { sendDeleteMessage(msg.id); }, danger: true });
   }
 
@@ -249,4 +339,43 @@ function searchMessages(query) {
       el.closest('.msg')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   });
+}
+
+// ── Render Rich Media Message ─────────────────────────────────────
+function renderRichMediaMessage(msg, isOwn) {
+  const feed = document.getElementById('chat-feed');
+  if (!feed) return;
+
+  const last = feed.lastElementChild;
+  const showFrom = !isOwn && (!last || last.dataset.sender !== msg.from || last.classList.contains('msg-system'));
+
+  const el = document.createElement('div');
+  el.className   = 'msg ' + (isOwn ? 'msg-out' : 'msg-in');
+  el.dataset.msgId  = msg.id;
+  el.dataset.sender = msg.from;
+
+  el.innerHTML = `
+    ${showFrom ? `<span class="msg-from">${escHtml(msg.from)}</span>` : ''}
+    <div class="msg-bubble" style="background:transparent; padding:0; border:none; box-shadow:none;">
+      <img src="${msg.url}" style="max-width:200px; border-radius:12px;" loading="lazy">
+    </div>
+    <span class="msg-time">${fmtTime(msg.ts)}</span>
+    <div class="msg-reactions" id="reactions-${msg.id}"></div>
+    <div class="msg-checkbox" style="display:none; position:absolute; top:-5px; left:-5px; width:20px; height:20px; background:var(--primary); border-radius:50%; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:bold; border:2px solid var(--surface-low); z-index:10; pointer-events:none;">✓</div>
+  `;
+
+  el.addEventListener('click', e => {
+    if (isMultiSelectMode && isOwn) {
+      e.preventDefault(); e.stopPropagation();
+      toggleMessageSelection(msg.id, el);
+    }
+  });
+  el.addEventListener('contextmenu', e => { e.preventDefault(); showContextMenu(e, msg, isOwn); });
+  el.addEventListener('touchstart',  e => {
+    const t = setTimeout(() => showContextMenu(e.touches[0], msg, isOwn), 500);
+    el.addEventListener('touchend', () => clearTimeout(t), { once: true });
+  });
+
+  feed.appendChild(el);
+  feed.scrollTop = feed.scrollHeight;
 }

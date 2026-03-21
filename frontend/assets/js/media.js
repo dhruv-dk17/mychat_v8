@@ -6,6 +6,7 @@ let recordedChunks   = [];
 let isRecording      = false;
 let activeCall       = null;
 let localStream      = null;
+let callStartTime    = 0;
 
 // ════════════════════════════════════════════
 // FILE SHARING
@@ -278,8 +279,11 @@ async function initiateCall() {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     const target = [...connectedPeers.values()].find(p => p.conn);
     if (!target) { showToast('No one to call', 'warning'); return; }
+    
+    // We don't send call_event 'started' here, we wait for recipient to accept
+    
     activeCall = peerInstance.call(target.conn.peer, localStream);
-    activeCall.on('stream', s => { playRemoteAudio(s); showActiveCallUI(); });
+    activeCall.on('stream', s => { playRemoteAudio(s); showActiveCallUI(); callStartTime = Date.now(); });
     activeCall.on('close',  endCall);
     showToast('Calling...', 'info');
   } catch (e) {
@@ -289,13 +293,21 @@ async function initiateCall() {
 
 function handleIncomingCall(call) {
   showIncomingCallUI(call.peer, async (accepted) => {
-    if (!accepted) { call.close(); return; }
+    if (!accepted) { 
+      call.close(); 
+      broadcastOrRelay({ type: 'call_event', event: 'missed', caller: call.peer, ts: Date.now() });
+      renderCallEvent({ event: 'missed', ts: Date.now(), isOwnCall: false });
+      return; 
+    }
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       call.answer(localStream);
       activeCall = call;
+      callStartTime = Date.now();
       call.on('stream', s => { playRemoteAudio(s); showActiveCallUI(); });
       call.on('close',  endCall);
+      broadcastOrRelay({ type: 'call_event', event: 'started', ts: Date.now() });
+      renderCallEvent({ event: 'started', ts: Date.now() });
     } catch (e) {
       showToast('Microphone access denied', 'error');
       call.close();
@@ -303,11 +315,23 @@ function handleIncomingCall(call) {
   });
 }
 
+function handleCallEvent(msg) {
+  renderCallEvent(msg);
+}
+
 function endCall() {
   if (localStream) localStream.getTracks().forEach(t => t.stop());
   if (activeCall)  activeCall.close();
+  
+  if (callStartTime > 0) {
+    const durSecs = Math.floor((Date.now() - callStartTime) / 1000);
+    broadcastOrRelay({ type: 'call_event', event: 'ended', durationSecs: durSecs, ts: Date.now() });
+    renderCallEvent({ event: 'ended', durationSecs: durSecs, ts: Date.now() });
+  }
+
   localStream = null;
   activeCall  = null;
+  callStartTime = 0;
   hideActiveCallUI();
 }
 

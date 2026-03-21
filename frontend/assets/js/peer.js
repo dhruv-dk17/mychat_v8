@@ -8,6 +8,9 @@ let myUsername      = '';
 let currentRoomId   = '';
 let isRoomLocked    = false;
 let currentRoomType = 'private';  // private | group | permanent
+let roomKey         = '';
+let pendingJoins    = new Map(); // peerId -> conn
+let acceptedPeers   = new Set(); // peerId
 
 // ── Load PeerJS lazily ────────────────────────────────────────────
 async function loadPeerJS() {
@@ -22,11 +25,12 @@ async function loadPeerJS() {
 }
 
 // ── Init as Host ──────────────────────────────────────────────────
-async function initAsHost(peerId, username, roomId) {
+async function initAsHost(peerId, username, roomId, keyForE2EE) {
   await loadPeerJS();
   myRole = 'host';
   myUsername = username;
   currentRoomId = roomId;
+  roomKey = keyForE2EE || roomId; // fallback
 
   peerInstance = new Peer(peerId, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', id => {
@@ -39,27 +43,31 @@ async function initAsHost(peerId, username, roomId) {
 }
 
 // ── Init as Guest ─────────────────────────────────────────────────
-async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwordForPerm) {
+async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwordForPerm, keyForE2EE) {
   await loadPeerJS();
   myRole = 'guest';
   myUsername = username;
   currentRoomId = roomId;
+  roomKey = keyForE2EE || passwordForPerm || roomId;
 
   peerInstance = new Peer(myPeerIdStr, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', () => {
-    const conn = peerInstance.connect(hostPeerIdStr, { reliable: true });
-    // Send auth as first message when opened
-    conn.on('open', async () => {
-      connectedPeers.set(hostPeerIdStr, { conn, username: 'Host', role: 'host' });
-      const authMsg = { type: 'auth', username };
-      if (passwordForPerm) authMsg.passwordHash = await sha256(passwordForPerm);
-      conn.send(JSON.stringify(authMsg));
-      setupConnection(conn);
-    });
-    conn.on('error', e => showToast('Connection error: ' + e.type, 'error'));
+    showModal('waiting-host-modal');
+    initiateHandshake(hostPeerIdStr, passwordForPerm);
   });
   peerInstance.on('call',  handleIncomingCall);
   peerInstance.on('error', handlePeerError);
+}
+
+function initiateHandshake(hostId, password) {
+  const conn = peerInstance.connect(hostId, { reliable: true });
+  setupConnection(conn);
+  conn.on('open', async () => {
+    // Send join request as first message
+    const req = { type: 'join_request', username: myUsername };
+    if (password) req.passwordHash = await sha256(password);
+    conn.send(JSON.stringify(req));
+  });
 }
 
 // ── Handle incoming connections (HOST side) ───────────────────────
@@ -76,9 +84,9 @@ function handleIncomingConnection(conn) {
     conn.once('data', async (raw) => {
       try {
         const msg = JSON.parse(raw);
-        if (msg.type !== 'auth') { conn.close(); return; }
+        if (msg.type !== 'join_request') { conn.close(); return; }
 
-        // For permanent rooms — re-verify password at host side too
+        // For permanent rooms — verify password
         if (currentRoomType === 'permanent' && msg.passwordHash) {
           try {
             const res  = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
@@ -88,12 +96,12 @@ function handleIncomingConnection(conn) {
             });
             const data = await res.json();
             if (!data.valid) {
-              conn.send(JSON.stringify({ type: 'auth_fail', reason: 'Invalid password' }));
+              conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Invalid password' }));
               conn.close();
               return;
             }
           } catch (e) {
-            conn.send(JSON.stringify({ type: 'auth_fail', reason: 'Server error' }));
+            conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Server error' }));
             conn.close();
             return;
           }
@@ -101,14 +109,17 @@ function handleIncomingConnection(conn) {
 
         // Group size limit
         if (currentRoomType === 'group' && connectedPeers.size >= CONFIG.MAX_GROUP_SIZE - 1) {
-          conn.send(JSON.stringify({ type: 'auth_fail', reason: 'Room is full' }));
+          conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Room is full' }));
           conn.close();
           return;
         }
 
-        // Auth success
-        conn.send(JSON.stringify({ type: 'auth_ok' }));
-        finalizeConnection(conn, msg.username);
+        // Trigger Join Request Modal
+        pendingJoins.set(conn.peer, conn);
+        showJoinRequestModal(msg.username,
+          () => finalizeJoin(conn, msg.username, true),
+          () => finalizeJoin(conn, msg.username, false)
+        );
       } catch (e) {
         conn.close();
       }
@@ -116,20 +127,40 @@ function handleIncomingConnection(conn) {
   });
 }
 
-function finalizeConnection(conn, username) {
-  connectedPeers.set(conn.peer, { conn, username, role: 'guest' });
-  setupConnection(conn);
-  broadcastUserList();
-  broadcastSystemMessage(`${username} joined`);
-  addUserToPanel(conn.peer, username, 'guest');
-  updateOnlineCount();
+function finalizeJoin(conn, username, accepted) {
+  if (accepted) {
+    acceptedPeers.add(conn.peer);
+    conn.send(JSON.stringify({ type: 'join_response', accepted: true }));
+    
+    connectedPeers.set(conn.peer, { conn, username, role: 'guest' });
+    setupConnection(conn);
+    broadcastUserList();
+    broadcastSystemMessage(`${username} joined`);
+    addUserToPanel(conn.peer, username, 'guest');
+    updateOnlineCount();
+  } else {
+    conn.send(JSON.stringify({ type: 'join_response', accepted: false }));
+    setTimeout(() => conn.close(), 500);
+  }
+  pendingJoins.delete(conn.peer);
 }
 
 // ── Setup data channel events ─────────────────────────────────────
 function setupConnection(conn) {
-  conn.on('data',  raw => {
-    try { handleIncomingMessage(JSON.parse(raw), conn); }
-    catch (e) { console.warn('Bad message', e); }
+  conn.on('data', async raw => {
+    try { 
+      const parsed = JSON.parse(raw);
+      if (parsed.type === 'enc' && parsed.data) {
+        try {
+          const dec = await aesDecrypt(roomKey, parsed.data);
+          handleIncomingMessage(JSON.parse(dec), conn);
+        } catch (err) {
+          console.warn('E2EE Decryption failed (wrong key?)', err);
+        }
+      } else {
+        handleIncomingMessage(parsed, conn); 
+      }
+    } catch (e) { console.warn('Bad message', e); }
   });
   conn.on('close', () => handlePeerDisconnect(conn.peer));
   conn.on('error', () => handlePeerDisconnect(conn.peer));
@@ -137,8 +168,37 @@ function setupConnection(conn) {
 
 // ── Route incoming messages ───────────────────────────────────────
 function handleIncomingMessage(msg, conn) {
+  // ── JOIN REQUEST HANDSHAKE ──────────────────
+  if (msg.type === 'join_request') {
+    if (myRole !== 'host') return;
+    if (acceptedPeers.has(conn.peer)) {
+      conn.send(JSON.stringify({ type: 'join_response', accepted: true }));
+      return;
+    }
+    pendingJoins.set(conn.peer, conn);
+    showJoinRequestModal(msg.username, 
+      () => finalizeJoin(conn, msg.username, true), 
+      () => finalizeJoin(conn, msg.username, false)
+    );
+    return;
+  }
+
+  if (msg.type === 'join_response') {
+    hideModal('waiting-host-modal');
+    if (msg.accepted) {
+      showToast('Joined room!', 'success');
+      updateConnectionUI('connected');
+    } else {
+      showToast('Join request rejected: ' + (msg.reason || 'Host declined'), 'error');
+      setTimeout(navigateHome, 2000);
+    }
+    return;
+  }
+
+  // ── NORMAL MESSAGES ──────────────────────────
   switch (msg.type) {
     case 'msg':               receiveTextMessage(msg); break;
+    case 'rich_media':        receiveRichMedia(msg); break;
     case 'file_meta':         receiveFileMeta(msg); break;
     case 'file_chunk':        receiveFileChunk(msg); break;
     case 'voice_msg':         receiveVoiceMessage(msg); break;
@@ -147,6 +207,7 @@ function handleIncomingMessage(msg, conn) {
     case 'ping':              conn.send(JSON.stringify({ type: 'pong', ts: msg.ts })); break;
     case 'pong':              updatePeerPing(conn.peer, msg.ts); break;
     case 'reaction':          applyReaction(msg); break;
+    case 'call_event':        handleCallEvent(msg); break;
     case 'delete_msg':        deleteMessage(msg.messageId); break;
     case 'screenshot_attempt':onPeerScreenshotAttempt(msg.from); break;
     case 'devtools_detected': onPeerDevTools(msg.from); break;
@@ -160,36 +221,47 @@ function handleIncomingMessage(msg, conn) {
     case 'relay':             
       if (myRole === 'host') {
         relayToAll(msg.payload, conn);
-        // Host also needs to process the message locally!
         handleIncomingMessage(msg.payload, conn);
       }
       break;
-    case 'auth_ok':           onAuthSuccess(); break;
-    case 'auth_fail':         onAuthFail(msg.reason); break;
   }
 }
 
 // ── Relay (host relays guest→guest messages) ──────────────────────
 function relayToAll(payload, senderConn) {
-  const json = JSON.stringify(payload);
-  connectedPeers.forEach(({ conn }) => {
-    if (conn !== senderConn && conn.open) conn.send(json);
-  });
+  // If we are relaying an already packed enc block, we don't re-encrypt.
+  // We'll just wrap the original payload in AES-GCM again like a normal message.
+  // Actually, we should trust the incoming structure, but since the Host decrypts the relay to read it locally,
+  // we can just broadcastOrRelay the decrypted payload again, which will re-encrypt it to everyone.
+  // Wait, no. relayToAll was called with the decrypted payload `msg.payload`. So we encrypt it.
+  broadcastToPeers(payload, senderConn);
 }
 
 // ── Broadcast / relay helpers ─────────────────────────────────────
-function broadcastToPeers(message) {
-  const json = JSON.stringify(message);
-  connectedPeers.forEach(({ conn }) => { if (conn.open) conn.send(json); });
+async function broadcastToPeers(message, excludeConn) {
+  try {
+    const encStr = await aesEncrypt(roomKey, JSON.stringify(message));
+    const finalJSON = JSON.stringify({ type: 'enc', data: encStr });
+    connectedPeers.forEach(({ conn }) => { 
+      if (conn !== excludeConn && conn.open) conn.send(finalJSON); 
+    });
+  } catch (e) {
+    console.error('E2EE Encrypt error', e);
+  }
 }
 
-function broadcastOrRelay(msg) {
+async function broadcastOrRelay(msg) {
   if (myRole === 'host') {
     broadcastToPeers(msg);
   } else {
-    const hostConn = [...connectedPeers.values()][0]?.conn;
+    const hostConn = [...connectedPeers.values()].find(p => p.role === 'host')?.conn || [...connectedPeers.values()][0]?.conn;
     if (hostConn?.open) {
-      hostConn.send(JSON.stringify({ type: 'relay', payload: msg }));
+      try {
+        const encStr = await aesEncrypt(roomKey, JSON.stringify({ type: 'relay', payload: msg }));
+        hostConn.send(JSON.stringify({ type: 'enc', data: encStr }));
+      } catch (e) {
+        console.error('E2EE Relay Encrypt error', e);
+      }
     }
   }
 }
@@ -211,6 +283,8 @@ function broadcastSystemMessage(text) {
 // ── Peer disconnect ───────────────────────────────────────────────
 function handlePeerDisconnect(peerId) {
   const p = connectedPeers.get(peerId);
+  pendingJoins.delete(peerId);
+  acceptedPeers.delete(peerId);
   if (!p) return;
   connectedPeers.delete(peerId);
   removeUserFromPanel(peerId);
@@ -287,15 +361,7 @@ setInterval(() => {
 }, CONFIG.PING_INTERVAL_MS);
 
 // ── Auth callbacks ────────────────────────────────────────────────
-function onAuthSuccess() {
-  updateConnectionUI('connected');
-  // After auth_ok, host sends user list
-}
 
-function onAuthFail(reason) {
-  showToast('Access denied: ' + (reason || 'Authentication failed'), 'error');
-  setTimeout(navigateHome, 1500);
-}
 
 // ── Peer error handling ───────────────────────────────────────────
 function handlePeerError(err) {

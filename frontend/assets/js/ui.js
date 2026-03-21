@@ -47,6 +47,25 @@ function hideModal(id) {
   if (el) el.classList.remove('modal-visible');
 }
 
+function showJoinRequestModal(username, onAccept, onReject) {
+  const nameEl = document.getElementById('join-request-name');
+  if (nameEl) nameEl.textContent = username;
+  
+  const acceptBtn = document.getElementById('accept-join-btn');
+  const rejectBtn = document.getElementById('reject-join-btn');
+  
+  const finish = (choice) => {
+    hideModal('join-request-modal');
+    if (choice) onAccept();
+    else onReject();
+  };
+
+  if (acceptBtn) acceptBtn.onclick = () => finish(true);
+  if (rejectBtn) rejectBtn.onclick = () => finish(false);
+  
+  showModal('join-request-modal');
+}
+
 // Close modals on backdrop click
 document.addEventListener('click', e => {
   if (e.target.classList.contains('modal-backdrop')) {
@@ -59,9 +78,11 @@ function navigateHome() {
   window.location.href = 'index.html';
 }
 
-function navigateToChat(roomId, type, username, role) {
+function navigateToChat(roomId, type, username, role, key) {
   const p = new URLSearchParams({ roomId, type, username, role });
-  window.location.href = `chat.html?${p.toString()}`;
+  let url = `chat.html?${p.toString()}`;
+  if (key) url += `#${key}`;
+  window.location.href = url;
 }
 
 function getChatParams() {
@@ -70,7 +91,8 @@ function getChatParams() {
     roomId:   p.get('roomId'),
     type:     p.get('type'),
     username: p.get('username'),
-    role:     p.get('role')
+    role:     p.get('role'),
+    key:      window.location.hash.slice(1)
   };
 }
 

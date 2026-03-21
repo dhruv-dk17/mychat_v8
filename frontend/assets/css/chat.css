@@ -812,3 +812,35 @@ body[data-page="chat"] {
   .msg { max-width: 85%; }
   #user-panel { width: 100%; }
 }
+
+/* ── Responsive adjustments ──────────────────── */
+@media screen and (max-width: 600px) {
+  #media-drawer {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 60px !important;
+    max-width: 100% !important;
+    border-radius: var(--r-lg) var(--r-lg) 0 0 !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+  
+  #multi-select-bar {
+    width: 90% !important;
+    bottom: 70px !important;
+    justify-content: space-between !important;
+  }
+}
+/* ── Loading Spinner ─────────────────────────── */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(139, 92, 246, 0.2);
+  border-top-color: var(--accent-bright);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
