@@ -25,9 +25,17 @@ if (corsOrigin !== '*' && !corsOrigin.startsWith('http')) {
 }
 
 // CORS — locked to frontend URL in production
+const allowedOrigins = [corsOrigin, 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173', 'http://localhost:8080'];
+
 app.use(cors({
-  origin: corsOrigin,
-  methods: ['GET', 'POST'],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || origin.endsWith('onrender.com') || corsOrigin === '*') {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   maxAge: 86400
 }));

@@ -64,4 +64,17 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
+router.delete('/account', async (req, res) => {
+  const { username, token } = req.query;
+  if (!username || !token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const del = await pool.query('DELETE FROM users WHERE username = $1 AND token = $2 RETURNING username', [username.toLowerCase(), token]);
+    if (!del.rows.length) return res.status(404).json({ error: 'Invalid session or account not found' });
+    res.json({ success: true, message: 'Account deleted' });
+  } catch (e) {
+    console.error('Delete account error:', e.message);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
 module.exports = router;

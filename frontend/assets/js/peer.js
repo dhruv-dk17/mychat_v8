@@ -63,6 +63,7 @@ function initiateHandshake(hostId, password) {
   const conn = peerInstance.connect(hostId, { reliable: true });
   setupConnection(conn);
   conn.on('open', async () => {
+    connectedPeers.set(hostId, { conn, username: 'Host', role: 'host' });
     // Send join request as first message
     const req = { type: 'join_request', username: myUsername };
     if (password) req.passwordHash = await sha256(password);

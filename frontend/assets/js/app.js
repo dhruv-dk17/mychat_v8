@@ -48,12 +48,40 @@ async function initHomePage() {
   const dd = document.getElementById('user-profile-dropdown');
   if (dd) {
     dd.addEventListener('click', () => {
-      if (confirm('Log out?')) {
-        clearUserSession();
-        refreshAuthState();
-      }
+      showModal('user-settings-modal');
     });
   }
+
+  document.getElementById('settings-logout-btn')?.addEventListener('click', () => {
+    clearUserSession();
+    refreshAuthState();
+    hideModal('user-settings-modal');
+  });
+
+  document.getElementById('settings-delete-account-btn')?.addEventListener('click', async () => {
+    if (confirm('Are you ABSOLUTELY sure you want to delete your account? All your permanent rooms will be wiped forever.')) {
+      const btn = document.getElementById('settings-delete-account-btn');
+      btn.disabled = true; btn.textContent = 'Deleting...';
+      try {
+        const u = getUserSession();
+        if (!u) throw new Error('Not logged in');
+        const res = await fetch(`${CONFIG.API_BASE}/users/account?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Deletion failed');
+        
+        clearUserSession();
+        refreshAuthState();
+        hideModal('user-settings-modal');
+        showToast('Account and rooms permanently deleted', 'success');
+      } catch (e) {
+        showToast(e.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Delete Account & Rooms';
+      }
+    }
+  });
 
   const loginBtn = document.getElementById('auth-login-btn');
   const regBtn   = document.getElementById('auth-register-btn');
@@ -66,6 +94,7 @@ async function initHomePage() {
     const p = pInput?.value;
     if (!u || !p) { if (aErr) aErr.textContent = 'Please fill all fields'; return; }
     
+    if (aErr) { aErr.textContent = ''; aErr.classList.remove('visible'); }
     loginBtn.disabled = true; regBtn.disabled = true;
     try {
       const fn = isLogin ? loginUser : registerUser;
@@ -75,7 +104,7 @@ async function initHomePage() {
       showToast('Welcome, ' + res.username, 'success');
       refreshAuthState();
     } catch (e) {
-      if (aErr) aErr.textContent = e.message;
+      if (aErr) { aErr.textContent = e.message; aErr.classList.add('visible'); }
     } finally {
       loginBtn.disabled = false; regBtn.disabled = false;
     }

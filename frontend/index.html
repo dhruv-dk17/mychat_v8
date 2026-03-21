@@ -199,6 +199,18 @@
     </div>
   </div>
 
+  <!-- User Settings Modal -->
+  <div class="modal-backdrop" id="user-settings-modal">
+    <div class="modal-box" style="width: 320px;">
+      <div class="modal-title" style="text-align: center; margin-bottom: 1rem;">Account Settings</div>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;">
+        <button class="btn btn-ghost w-100" id="settings-logout-btn">Log Out</button>
+        <button class="btn btn-ghost w-100" id="settings-delete-account-btn" style="color:var(--red);">Delete Account & Rooms</button>
+      </div>
+      <button class="btn btn-ghost" style="position: absolute; top:10px; right:10px; border:none; padding:10px;" onclick="hideModal('user-settings-modal')">✕</button>
+    </div>
+  </div>
+
   <!-- Scripts (order matters) -->
   <script src="assets/js/config.js"></script>
   <script src="assets/js/crypto.js"></script>
