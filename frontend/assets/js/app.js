@@ -271,7 +271,8 @@ async function initHomePage() {
       showToast('Enter a valid Room ID', 'warning'); return;
     }
     const username = document.getElementById('join-username')?.value.trim() || 'Guest_' + randomToken(2);
-    navigateToChat(id, 'private', username, 'guest');
+    const legacyKey = invite?.type === 'private' && invite.roomId === id ? invite.key : '';
+    navigateToChat(id, 'private', username, 'guest', legacyKey || undefined);
   });
 
   // ── Group Room ───────────────────────────────
@@ -286,7 +287,8 @@ async function initHomePage() {
     const name = document.getElementById('join-group-username')?.value.trim();
     if (!id)   { showToast('Enter Room ID', 'warning'); return; }
     if (!name) { showToast('Enter a username', 'warning'); return; }
-    navigateToChat(id, 'group', name, 'guest');
+    const legacyKey = invite?.type === 'group' && invite.roomId === id ? invite.key : '';
+    navigateToChat(id, 'group', name, 'guest', legacyKey || undefined);
   });
 
   // ── Permanent Room — availability check ──────
@@ -445,7 +447,10 @@ async function initChatPage() {
     }
   }
 
-  const e2eeKey = isPerm ? storedPermPassword : params.roomId;
+  const fallbackRoomKeys = [];
+  const e2eeKey = isPerm ? storedPermPassword : (params.key || params.roomId);
+  if (!isPerm && params.key && params.key !== params.roomId) fallbackRoomKeys.push(params.roomId);
+  if (isPerm && params.roomId && params.roomId !== e2eeKey) fallbackRoomKeys.push(params.roomId);
 
   // Update top bar
   const ridEl = document.getElementById('room-id-display');
@@ -467,10 +472,10 @@ async function initChatPage() {
 
   // Init peer
   if (isHost) {
-    await initAsHost(hId, params.username, params.roomId, e2eeKey);
+    await initAsHost(hId, params.username, params.roomId, e2eeKey, fallbackRoomKeys);
     updateHostUI();
   } else {
-    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? storedPermPassword : null, e2eeKey);
+    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? storedPermPassword : null, e2eeKey, fallbackRoomKeys);
     updateGuestUI();
   }
 

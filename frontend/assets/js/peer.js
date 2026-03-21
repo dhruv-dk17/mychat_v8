@@ -9,6 +9,7 @@ let currentRoomId = '';
 let isRoomLocked = false;
 let currentRoomType = 'private';  // private | group | permanent
 let roomKey = '';
+let roomKeyCandidates = [];
 let pendingJoins = new Map(); // peerId -> conn
 let acceptedPeers = new Set(); // peerId
 
@@ -25,12 +26,35 @@ async function loadPeerJS() {
 }
 
 // ── Init as Host ──────────────────────────────────────────────────
-async function initAsHost(peerId, username, roomId, keyForE2EE) {
+function setRoomKeys(primaryKey, fallbackKeys = []) {
+  roomKey = primaryKey || '';
+  roomKeyCandidates = Array.from(new Set([roomKey, ...fallbackKeys.filter(Boolean)]));
+}
+
+async function decryptWithRoomKeys(payload) {
+  let lastError = null;
+  for (const candidate of roomKeyCandidates) {
+    if (!candidate) continue;
+    try {
+      const decrypted = await aesDecrypt(candidate, payload);
+      if (candidate !== roomKey) {
+        roomKey = candidate;
+        roomKeyCandidates = [candidate, ...roomKeyCandidates.filter(key => key !== candidate)];
+      }
+      return decrypted;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('No valid room key');
+}
+
+async function initAsHost(peerId, username, roomId, keyForE2EE, fallbackRoomKeys = []) {
   await loadPeerJS();
   myRole = 'host';
   myUsername = username;
   currentRoomId = roomId;
-  roomKey = keyForE2EE || roomId; // fallback
+  setRoomKeys(keyForE2EE || roomId, fallbackRoomKeys);
 
   peerInstance = new Peer(peerId, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', id => {
@@ -43,12 +67,12 @@ async function initAsHost(peerId, username, roomId, keyForE2EE) {
 }
 
 // ── Init as Guest ─────────────────────────────────────────────────
-async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwordForPerm, keyForE2EE) {
+async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwordForPerm, keyForE2EE, fallbackRoomKeys = []) {
   await loadPeerJS();
   myRole = 'guest';
   myUsername = username;
   currentRoomId = roomId;
-  roomKey = keyForE2EE || roomId;
+  setRoomKeys(keyForE2EE || roomId, fallbackRoomKeys);
 
   peerInstance = new Peer(myPeerIdStr, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', () => {
@@ -153,7 +177,7 @@ function setupConnection(conn) {
       const parsed = JSON.parse(raw);
       if (parsed.type === 'enc' && parsed.data) {
         try {
-          const dec = await aesDecrypt(roomKey, parsed.data);
+          const dec = await decryptWithRoomKeys(parsed.data);
           handleIncomingMessage(JSON.parse(dec), conn);
         } catch (err) {
           console.warn('E2EE Decryption failed (wrong key?)', err);
