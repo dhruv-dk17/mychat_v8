@@ -50,6 +50,7 @@ async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwor
     const conn = peerInstance.connect(hostPeerIdStr, { reliable: true });
     // Send auth as first message when opened
     conn.on('open', async () => {
+      connectedPeers.set(hostPeerIdStr, { conn, username: 'Host', role: 'host' });
       const authMsg = { type: 'auth', username };
       if (passwordForPerm) authMsg.passwordHash = await sha256(passwordForPerm);
       conn.send(JSON.stringify(authMsg));
@@ -159,8 +160,8 @@ function handleIncomingMessage(msg, conn) {
     case 'relay':             
       if (myRole === 'host') {
         relayToAll(msg.payload, conn);
-        // Host also needs to see the message!
-        if (msg.payload.type === 'msg') receiveTextMessage(msg.payload);
+        // Host also needs to process the message locally!
+        handleIncomingMessage(msg.payload, conn);
       }
       break;
     case 'auth_ok':           onAuthSuccess(); break;
@@ -325,7 +326,15 @@ function syncUserList(users) {
   const panel = document.getElementById('user-list');
   if (!panel) return;
   panel.innerHTML = '';
-  users.forEach(u => addUserToPanel(u.peerId, u.username, u.role));
+  users.forEach(u => {
+    addUserToPanel(u.peerId, u.username, u.role);
+    if (!connectedPeers.has(u.peerId) && u.peerId !== peerInstance?.id) {
+       connectedPeers.set(u.peerId, { username: u.username, role: u.role, conn: null });
+    } else if (connectedPeers.has(u.peerId)) {
+       connectedPeers.get(u.peerId).username = u.username;
+       connectedPeers.get(u.peerId).role = u.role;
+    }
+  });
   updateOnlineCount(users.length);
 }
 

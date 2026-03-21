@@ -48,7 +48,8 @@ body[data-page="home"]::after {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  margin-bottom: 2rem;
+  margin-top: auto;
+  margin-bottom: auto;
   animation: page-in 0.5s var(--ease-snap);
 }
 @keyframes page-in {

@@ -2,8 +2,9 @@
 'use strict';
 
 const CONFIG = {
-  // ── Replace with your actual Render backend URL after first deploy ──
-  API_BASE: 'https://mychat-v7-backend.onrender.com/api',
+  API_BASE: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:10000/api' 
+    : 'https://mychat-v7-backend.onrender.com/api',
 
   PEERJS_CONFIG: { debug: 0 },
 

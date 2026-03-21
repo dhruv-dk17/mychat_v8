@@ -213,6 +213,11 @@ async function initChatPage() {
   // Add self to user panel
   addUserToPanel('self', params.username, isHost ? 'host' : 'guest');
   updateOnlineCount(1);
+  
+  if (currentRoomType === 'group') {
+    const callBtn = document.getElementById('call-btn');
+    if (callBtn) callBtn.style.display = 'none';
+  }
 
   // Init peer
   if (isHost) {

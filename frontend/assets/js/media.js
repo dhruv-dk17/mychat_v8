@@ -199,19 +199,41 @@ function renderVoiceMessage(msg, isOwn) {
     ${!isOwn ? `<span class="msg-from">${escHtml(msg.from)}</span>` : ''}
     <div class="msg-bubble">
       <div class="voice-player">
+        <div class="voice-avatar">${!isOwn ? escHtml(msg.from.slice(0,1).toUpperCase()) : '🔊'}</div>
         <button class="voice-play-btn" data-url="${url}">▶</button>
-        <canvas class="voice-waveform" width="160" height="32"></canvas>
+        <div class="voice-controls">
+          <input type="range" class="voice-scrubber" value="0" min="0" max="100" step="0.1" />
+          <span class="voice-duration">0:00</span>
+        </div>
       </div>
     </div>
     <span class="msg-time">${fmtTime(msg.ts)}</span>
   `;
 
-  const playBtn = el.querySelector('.voice-play-btn');
-  let audio     = null;
+  const playBtn  = el.querySelector('.voice-play-btn');
+  const scrubber = el.querySelector('.voice-scrubber');
+  const durLabel = el.querySelector('.voice-duration');
+  let audio      = null;
+
+  const fmt = (sec) => {
+    const s = Math.floor(sec % 60);
+    return Math.floor(sec / 60) + ':' + (s < 10 ? '0' : '') + s;
+  };
+
   playBtn.addEventListener('click', () => {
     if (!audio) {
       audio = new Audio(url);
-      audio.onended = () => { playBtn.textContent = '▶'; };
+      audio.onloadedmetadata = () => { durLabel.textContent = fmt(audio.duration); };
+      audio.ontimeupdate = () => {
+        if (!audio.duration) return;
+        scrubber.value = (audio.currentTime / audio.duration) * 100;
+        durLabel.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
+      };
+      audio.onended = () => { playBtn.textContent = '▶'; scrubber.value = 0; };
+      
+      scrubber.addEventListener('input', () => {
+        if (audio.duration) audio.currentTime = (scrubber.value / 100) * audio.duration;
+      });
     }
     if (audio.paused) { audio.play(); playBtn.textContent = '⏸'; }
     else              { audio.pause(); playBtn.textContent = '▶'; }
@@ -220,8 +242,7 @@ function renderVoiceMessage(msg, isOwn) {
   feed.appendChild(el);
   feed.scrollTop = feed.scrollHeight;
 
-  drawWaveform(el.querySelector('.voice-waveform'), blob);
-
+  // We no longer draw the canvas waveform
   const m = { ...msg, type: 'voice', blobUrl: url };
   messages.push(m);
 }
@@ -250,8 +271,12 @@ async function drawWaveform(canvas, blob) {
 
 async function initiateCall() {
   try {
+    if (currentRoomType !== 'private') {
+      showToast('Calling is only supported in Private rooms', 'warning');
+      return;
+    }
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    const target = [...connectedPeers.values()][0];
+    const target = [...connectedPeers.values()].find(p => p.conn);
     if (!target) { showToast('No one to call', 'warning'); return; }
     activeCall = peerInstance.call(target.conn.peer, localStream);
     activeCall.on('stream', s => { playRemoteAudio(s); showActiveCallUI(); });
