@@ -159,6 +159,9 @@ function finalizeJoin(conn, username, accepted) {
 
     connectedPeers.set(conn.peer, { conn, username, role: 'guest' });
     setupConnection(conn);
+    if (currentRoomType !== 'permanent') {
+      conn.send(JSON.stringify({ type: 'room_sync', roomKey }));
+    }
     broadcastUserList();
     broadcastSystemMessage(`${username} joined`);
     addUserToPanel(conn.peer, username, 'guest');
@@ -221,6 +224,13 @@ function handleIncomingMessage(msg, conn) {
   }
 
   // ── NORMAL MESSAGES ──────────────────────────
+  if (msg.type === 'room_sync') {
+    if (myRole !== 'host' && currentRoomType !== 'permanent' && msg.roomKey) {
+      setRoomKeys(msg.roomKey, [currentRoomId, ...roomKeyCandidates]);
+    }
+    return;
+  }
+
   let shouldRelayFromGuest = false;
   switch (msg.type) {
     case 'msg': receiveTextMessage(msg); shouldRelayFromGuest = true; break;
