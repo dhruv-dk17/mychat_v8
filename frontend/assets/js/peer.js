@@ -1,24 +1,24 @@
 'use strict';
 
 // ── State ─────────────────────────────────────────────────────────
-let peerInstance    = null;
-let connectedPeers  = new Map();  // peerId → { conn, username, role }
-let myRole          = 'guest';
-let myUsername      = '';
-let currentRoomId   = '';
-let isRoomLocked    = false;
+let peerInstance = null;
+let connectedPeers = new Map();  // peerId → { conn, username, role }
+let myRole = 'guest';
+let myUsername = '';
+let currentRoomId = '';
+let isRoomLocked = false;
 let currentRoomType = 'private';  // private | group | permanent
-let roomKey         = '';
-let pendingJoins    = new Map(); // peerId -> conn
-let acceptedPeers   = new Set(); // peerId
+let roomKey = '';
+let pendingJoins = new Map(); // peerId -> conn
+let acceptedPeers = new Set(); // peerId
 
 // ── Load PeerJS lazily ────────────────────────────────────────────
 async function loadPeerJS() {
   if (window.Peer) return;
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src     = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js';
-    s.onload  = resolve;
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js';
+    s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
   });
@@ -38,8 +38,8 @@ async function initAsHost(peerId, username, roomId, keyForE2EE) {
     updateConnectionUI('hosting');
   });
   peerInstance.on('connection', handleIncomingConnection);
-  peerInstance.on('call',       handleIncomingCall);
-  peerInstance.on('error',      handlePeerError);
+  peerInstance.on('call', handleIncomingCall);
+  peerInstance.on('error', handlePeerError);
 }
 
 // ── Init as Guest ─────────────────────────────────────────────────
@@ -55,7 +55,7 @@ async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwor
     showModal('waiting-host-modal');
     initiateHandshake(hostPeerIdStr, passwordForPerm);
   });
-  peerInstance.on('call',  handleIncomingCall);
+  peerInstance.on('call', handleIncomingCall);
   peerInstance.on('error', handlePeerError);
 }
 
@@ -90,10 +90,10 @@ function handleIncomingConnection(conn) {
         // For permanent rooms — verify password
         if (currentRoomType === 'permanent' && msg.passwordHash) {
           try {
-            const res  = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
-              method:  'POST',
+            const res = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({ slug: currentRoomId, passwordHash: msg.passwordHash })
+              body: JSON.stringify({ slug: currentRoomId, passwordHash: msg.passwordHash })
             });
             const data = await res.json();
             if (!data.valid) {
@@ -132,7 +132,7 @@ function finalizeJoin(conn, username, accepted) {
   if (accepted) {
     acceptedPeers.add(conn.peer);
     conn.send(JSON.stringify({ type: 'join_response', accepted: true }));
-    
+
     connectedPeers.set(conn.peer, { conn, username, role: 'guest' });
     setupConnection(conn);
     broadcastUserList();
@@ -149,7 +149,7 @@ function finalizeJoin(conn, username, accepted) {
 // ── Setup data channel events ─────────────────────────────────────
 function setupConnection(conn) {
   conn.on('data', async raw => {
-    try { 
+    try {
       const parsed = JSON.parse(raw);
       if (parsed.type === 'enc' && parsed.data) {
         try {
@@ -159,7 +159,7 @@ function setupConnection(conn) {
           console.warn('E2EE Decryption failed (wrong key?)', err);
         }
       } else {
-        handleIncomingMessage(parsed, conn); 
+        handleIncomingMessage(parsed, conn);
       }
     } catch (e) { console.warn('Bad message', e); }
   });
@@ -177,8 +177,8 @@ function handleIncomingMessage(msg, conn) {
       return;
     }
     pendingJoins.set(conn.peer, conn);
-    showJoinRequestModal(msg.username, 
-      () => finalizeJoin(conn, msg.username, true), 
+    showJoinRequestModal(msg.username,
+      () => finalizeJoin(conn, msg.username, true),
       () => finalizeJoin(conn, msg.username, false)
     );
     return;
@@ -199,28 +199,28 @@ function handleIncomingMessage(msg, conn) {
   // ── NORMAL MESSAGES ──────────────────────────
   let shouldRelayFromGuest = false;
   switch (msg.type) {
-    case 'msg':               receiveTextMessage(msg); shouldRelayFromGuest = true; break;
-    case 'rich_media':        receiveRichMedia(msg); shouldRelayFromGuest = true; break;
-    case 'file_meta':         receiveFileMeta(msg); shouldRelayFromGuest = true; break;
-    case 'file_chunk':        receiveFileChunk(msg); shouldRelayFromGuest = true; break;
-    case 'voice_msg':         receiveVoiceMessage(msg); shouldRelayFromGuest = true; break;
-    case 'clear_chat':        executeClearChat(msg.from); shouldRelayFromGuest = true; break;
-    case 'typing':            showTypingIndicator(msg.from); shouldRelayFromGuest = true; break;
-    case 'ping':              conn.send(JSON.stringify({ type: 'pong', ts: msg.ts })); break;
-    case 'pong':              updatePeerPing(conn.peer, msg.ts); break;
-    case 'reaction':          applyReaction(msg); shouldRelayFromGuest = true; break;
-    case 'call_event':        handleCallEvent(msg); shouldRelayFromGuest = true; break;
-    case 'delete_msg':        deleteMessage(msg.messageId); shouldRelayFromGuest = true; break;
-    case 'screenshot_attempt':onPeerScreenshotAttempt(msg.from); shouldRelayFromGuest = true; break;
+    case 'msg': receiveTextMessage(msg); shouldRelayFromGuest = true; break;
+    case 'rich_media': receiveRichMedia(msg); shouldRelayFromGuest = true; break;
+    case 'file_meta': receiveFileMeta(msg); shouldRelayFromGuest = true; break;
+    case 'file_chunk': receiveFileChunk(msg); shouldRelayFromGuest = true; break;
+    case 'voice_msg': receiveVoiceMessage(msg); shouldRelayFromGuest = true; break;
+    case 'clear_chat': executeClearChat(msg.from); shouldRelayFromGuest = true; break;
+    case 'typing': showTypingIndicator(msg.from); shouldRelayFromGuest = true; break;
+    case 'ping': conn.send(JSON.stringify({ type: 'pong', ts: msg.ts })); break;
+    case 'pong': updatePeerPing(conn.peer, msg.ts); break;
+    case 'reaction': applyReaction(msg); shouldRelayFromGuest = true; break;
+    case 'call_event': handleCallEvent(msg); shouldRelayFromGuest = true; break;
+    case 'delete_msg': deleteMessage(msg.messageId); shouldRelayFromGuest = true; break;
+    case 'screenshot_attempt': onPeerScreenshotAttempt(msg.from); shouldRelayFromGuest = true; break;
     case 'devtools_detected': onPeerDevTools(msg.from); shouldRelayFromGuest = true; break;
-    case 'kick':              if (msg.target === myUsername) executeKick(); break;
-    case 'force_mute':        if (msg.target === myUsername) executeMute(); break;
-    case 'promote':           if (msg.target === myUsername) becomeHost(); break;
-    case 'room_locked':       showToast('Room is locked', 'warning'); navigateHome(); break;
-    case 'room_end':          showRoomEndedModal(); break;
-    case 'host_transfer':     if (msg.newHost === myUsername) becomeHost(); break;
-    case 'user_list':         syncUserList(msg.users); break;
-    case 'relay':             
+    case 'kick': if (msg.target === myUsername) executeKick(); break;
+    case 'force_mute': if (msg.target === myUsername) executeMute(); break;
+    case 'promote': if (msg.target === myUsername) becomeHost(); break;
+    case 'room_locked': showToast('Room is locked', 'warning'); navigateHome(); break;
+    case 'room_end': showRoomEndedModal(); break;
+    case 'host_transfer': if (msg.newHost === myUsername) becomeHost(); break;
+    case 'user_list': syncUserList(msg.users); break;
+    case 'relay':
       if (myRole === 'host') {
         handleIncomingMessage(msg.payload, conn);
       }
@@ -247,8 +247,8 @@ async function broadcastToPeers(message, excludeConn) {
   try {
     const encStr = await aesEncrypt(roomKey, JSON.stringify(message));
     const finalJSON = JSON.stringify({ type: 'enc', data: encStr });
-    connectedPeers.forEach(({ conn }) => { 
-      if (conn !== excludeConn && conn.open) conn.send(finalJSON); 
+    connectedPeers.forEach(({ conn }) => {
+      if (conn !== excludeConn && conn.open) conn.send(finalJSON);
     });
   } catch (e) {
     console.error('E2EE Encrypt error', e);
@@ -400,10 +400,10 @@ function syncUserList(users) {
   users.forEach(u => {
     addUserToPanel(u.peerId, u.username, u.role);
     if (!connectedPeers.has(u.peerId) && u.peerId !== peerInstance?.id) {
-       connectedPeers.set(u.peerId, { username: u.username, role: u.role, conn: null });
+      connectedPeers.set(u.peerId, { username: u.username, role: u.role, conn: null });
     } else if (connectedPeers.has(u.peerId)) {
-       connectedPeers.get(u.peerId).username = u.username;
-       connectedPeers.get(u.peerId).role = u.role;
+      connectedPeers.get(u.peerId).username = u.username;
+      connectedPeers.get(u.peerId).role = u.role;
     }
   });
   updateOnlineCount(users.length);
@@ -413,11 +413,11 @@ function syncUserList(users) {
 function destroyPeer() {
   try {
     broadcastToPeers({ type: 'user_left', username: myUsername });
-  } catch (e) {}
-  connectedPeers.forEach(({ conn }) => { try { conn.close(); } catch (e) {} });
+  } catch (e) { }
+  connectedPeers.forEach(({ conn }) => { try { conn.close(); } catch (e) { } });
   connectedPeers.clear();
   if (peerInstance) {
-    try { peerInstance.destroy(); } catch (e) {}
+    try { peerInstance.destroy(); } catch (e) { }
     peerInstance = null;
   }
 }
