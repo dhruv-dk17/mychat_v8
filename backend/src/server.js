@@ -18,9 +18,15 @@ app.set('trust proxy', 1);
 // Body parsing — 10kb limit prevents payload attacks
 app.use(express.json({ limit: '10kb' }));
 
+// Parse ALLOWED_ORIGIN from Render env setup
+let corsOrigin = process.env.ALLOWED_ORIGIN || '*';
+if (corsOrigin !== '*' && !corsOrigin.startsWith('http')) {
+  corsOrigin = `https://${corsOrigin}`;
+}
+
 // CORS — locked to frontend URL in production
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || '*',
+  origin: corsOrigin,
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
   maxAge: 86400
