@@ -197,21 +197,22 @@ function handleIncomingMessage(msg, conn) {
   }
 
   // ── NORMAL MESSAGES ──────────────────────────
+  let shouldRelayFromGuest = false;
   switch (msg.type) {
-    case 'msg':               receiveTextMessage(msg); break;
-    case 'rich_media':        receiveRichMedia(msg); break;
-    case 'file_meta':         receiveFileMeta(msg); break;
-    case 'file_chunk':        receiveFileChunk(msg); break;
-    case 'voice_msg':         receiveVoiceMessage(msg); break;
-    case 'clear_chat':        executeClearChat(msg.from); break;
-    case 'typing':            showTypingIndicator(msg.from); break;
+    case 'msg':               receiveTextMessage(msg); shouldRelayFromGuest = true; break;
+    case 'rich_media':        receiveRichMedia(msg); shouldRelayFromGuest = true; break;
+    case 'file_meta':         receiveFileMeta(msg); shouldRelayFromGuest = true; break;
+    case 'file_chunk':        receiveFileChunk(msg); shouldRelayFromGuest = true; break;
+    case 'voice_msg':         receiveVoiceMessage(msg); shouldRelayFromGuest = true; break;
+    case 'clear_chat':        executeClearChat(msg.from); shouldRelayFromGuest = true; break;
+    case 'typing':            showTypingIndicator(msg.from); shouldRelayFromGuest = true; break;
     case 'ping':              conn.send(JSON.stringify({ type: 'pong', ts: msg.ts })); break;
     case 'pong':              updatePeerPing(conn.peer, msg.ts); break;
-    case 'reaction':          applyReaction(msg); break;
-    case 'call_event':        handleCallEvent(msg); break;
-    case 'delete_msg':        deleteMessage(msg.messageId); break;
-    case 'screenshot_attempt':onPeerScreenshotAttempt(msg.from); break;
-    case 'devtools_detected': onPeerDevTools(msg.from); break;
+    case 'reaction':          applyReaction(msg); shouldRelayFromGuest = true; break;
+    case 'call_event':        handleCallEvent(msg); shouldRelayFromGuest = true; break;
+    case 'delete_msg':        deleteMessage(msg.messageId); shouldRelayFromGuest = true; break;
+    case 'screenshot_attempt':onPeerScreenshotAttempt(msg.from); shouldRelayFromGuest = true; break;
+    case 'devtools_detected': onPeerDevTools(msg.from); shouldRelayFromGuest = true; break;
     case 'kick':              if (msg.target === myUsername) executeKick(); break;
     case 'force_mute':        if (msg.target === myUsername) executeMute(); break;
     case 'promote':           if (msg.target === myUsername) becomeHost(); break;
@@ -221,10 +222,13 @@ function handleIncomingMessage(msg, conn) {
     case 'user_list':         syncUserList(msg.users); break;
     case 'relay':             
       if (myRole === 'host') {
-        relayToAll(msg.payload, conn);
         handleIncomingMessage(msg.payload, conn);
       }
-      break;
+      return;
+  }
+
+  if (myRole === 'host' && shouldRelayFromGuest && conn && connectedPeers.has(conn.peer)) {
+    relayToAll(msg, conn);
   }
 }
 
@@ -258,7 +262,7 @@ async function broadcastOrRelay(msg) {
     const hostConn = [...connectedPeers.values()].find(p => p.role === 'host')?.conn || [...connectedPeers.values()][0]?.conn;
     if (hostConn?.open) {
       try {
-        const encStr = await aesEncrypt(roomKey, JSON.stringify({ type: 'relay', payload: msg }));
+        const encStr = await aesEncrypt(roomKey, JSON.stringify(msg));
         hostConn.send(JSON.stringify({ type: 'enc', data: encStr }));
       } catch (e) {
         console.error('E2EE Relay Encrypt error', e);
