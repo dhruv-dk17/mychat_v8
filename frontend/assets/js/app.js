@@ -199,7 +199,10 @@ async function initHomePage() {
     // Use session username as joining name, or 'Host' if host
     // We will just verify the password and join as host if they own it, but practically they are host if they have the password.
     verifyRoomPassword(slug, pw).then(valid => {
-      if (valid) navigateToChat(slug, 'permanent', session ? session.username : 'User', 'host');
+      if (valid) {
+        sessionStorage.setItem('joinPassword_' + slug, pw);
+        navigateToChat(slug, 'permanent', session ? session.username : 'User', 'host');
+      }
       else showToast('Incorrect password', 'error');
     }).catch(() => showToast('Error joining', 'error'));
   };
@@ -321,6 +324,7 @@ async function initHomePage() {
     btn.disabled = true; btn.textContent = 'Registering...';
     try {
       const result = await registerPermanentRoom(slug, pw);
+      sessionStorage.setItem('joinPassword_' + slug, pw);
       showSuccessModal(result.slug, result.ownerToken);
     } catch (e) {
       showErr(e.message || 'Registration failed');
@@ -347,6 +351,7 @@ async function initHomePage() {
     try {
       const valid = await verifyRoomPassword(slug, pw);
       if (!valid) { showErr('Incorrect password'); btn.disabled = false; btn.textContent = '→ Join Room'; return; }
+      sessionStorage.setItem('joinPassword_' + slug, pw);
       navigateToChat(slug, 'permanent', name, 'guest');
     } catch (e) {
       showErr('Verification failed — is the server awake?');
@@ -384,6 +389,8 @@ async function initChatPage() {
   const isHost  = params.role === 'host';
   const hId     = hostPeerId(params.roomId, isPerm);
   const gId     = guestPeerId(params.roomId, isPerm);
+  const storedPermPassword = isPerm ? (sessionStorage.getItem('joinPassword_' + params.roomId) || '') : '';
+  const e2eeKey = isPerm ? (storedPermPassword || params.key) : params.key;
 
   // Update top bar
   const ridEl = document.getElementById('room-id-display');
@@ -409,11 +416,10 @@ async function initChatPage() {
 
   // Init peer
   if (isHost) {
-    await initAsHost(hId, params.username, params.roomId, params.key);
+    await initAsHost(hId, params.username, params.roomId, e2eeKey);
     updateHostUI();
   } else {
-    const pw = sessionStorage.getItem('joinPassword_' + params.roomId) || '';
-    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? pw : null, params.key);
+    await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? storedPermPassword : null, e2eeKey);
     updateGuestUI();
   }
 

@@ -48,7 +48,7 @@ async function initAsGuest(hostPeerIdStr, myPeerIdStr, username, roomId, passwor
   myRole = 'guest';
   myUsername = username;
   currentRoomId = roomId;
-  roomKey = keyForE2EE || passwordForPerm || roomId;
+  roomKey = keyForE2EE || roomId;
 
   peerInstance = new Peer(myPeerIdStr, CONFIG.PEERJS_CONFIG);
   peerInstance.on('open', () => {
