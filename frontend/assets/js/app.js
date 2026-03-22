@@ -472,7 +472,7 @@ function startPermanentHistoryPolling(roomId, password) {
 
 function leaveCurrentRoom() {
   stopPermanentHistoryPolling();
-  if (currentRoomType === 'private' && myRole === 'host') {
+  if ((currentRoomType === 'private' || currentRoomType === 'direct') && myRole === 'host') {
     endRoom(true);
     return;
   }
@@ -482,7 +482,7 @@ function leaveCurrentRoom() {
 
 function handlePageUnload() {
   stopPermanentHistoryPolling();
-  if (currentRoomType === 'private' && myRole === 'host') {
+  if ((currentRoomType === 'private' || currentRoomType === 'direct') && myRole === 'host') {
     endRoom(false);
   } else {
     destroyPeer();
@@ -496,6 +496,7 @@ async function initChatPage() {
 
   currentRoomType = params.type || 'private';
   const isPerm  = params.type === 'permanent';
+  const isDirect = params.type === 'direct';
   let isHost  = params.role === 'host';
   const hId     = hostPeerId(params.roomId, isPerm);
   const gId     = guestPeerId(params.roomId, isPerm);
@@ -545,23 +546,27 @@ async function initChatPage() {
   const badge = document.querySelector('.room-type-badge');
   if (badge) badge.textContent = (params.type || 'PRIVATE').toUpperCase();
 
-  // Add self to user panel
-  addUserToPanel('self', params.username, isHost ? 'host' : 'guest');
-  updateOnlineCount(1);
-  
   if (currentRoomType === 'group') {
     const callBtn = document.getElementById('call-btn');
     if (callBtn) callBtn.style.display = 'none';
   }
 
   // Init peer
-  if (isHost) {
+  let selfRole = isHost ? 'host' : 'guest';
+  if (isDirect) {
+    selfRole = await initDirectRoom(params.username, params.roomId, e2eeKey, fallbackRoomKeys);
+    if (selfRole === 'host') updateHostUI();
+    else updateGuestUI();
+  } else if (isHost) {
     await initAsHost(hId, params.username, params.roomId, e2eeKey, fallbackRoomKeys);
     updateHostUI();
   } else {
     await initAsGuest(hId, gId, params.username, params.roomId, isPerm ? storedPermPassword : null, e2eeKey, fallbackRoomKeys);
     updateGuestUI();
   }
+
+  addUserToPanel('self', params.username, selfRole);
+  updateOnlineCount(1);
 
   if (isPerm && storedPermPassword) {
     await loadPermanentHistoryOnce(params.roomId, storedPermPassword);

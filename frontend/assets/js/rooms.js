@@ -28,7 +28,6 @@ async function postJsonWithTimeout(path, payload) {
   }
 }
 
-// ── User Auth API ───────────────────────────────────────────────────
 async function registerUser(username, password) {
   return postJsonWithTimeout('/users/register', { username, password });
 }
@@ -37,43 +36,37 @@ async function loginUser(username, password) {
   return postJsonWithTimeout('/users/login', { username, password });
 }
 
-// ── Room availability check ───────────────────────────────────────
 async function checkRoomAvailability(slug) {
-  const res  = await fetch(`${CONFIG.API_BASE}/rooms/check/${encodeURIComponent(slug)}`);
+  const res = await fetch(`${CONFIG.API_BASE}/rooms/check/${encodeURIComponent(slug)}`);
   const data = await res.json();
   return data.available === true;
 }
 
-// ── Register permanent room ───────────────────────────────────────
 async function registerPermanentRoom(slug, password) {
   const u = getUserSession();
   if (!u) throw new Error('Must be logged in to create permanent rooms');
 
-  const payload = { slug, password, username: u.username, token: u.token };
-
   const res = await fetch(`${CONFIG.API_BASE}/rooms/register`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload)
+    body: JSON.stringify({ slug, password, username: u.username, token: u.token })
   });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Registration failed');
-
-  return { slug };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Registration failed');
+  return { slug: data.slug || slug };
 }
 
-// ── Verify room password ──────────────────────────────────────────
 async function verifyRoomPassword(slug, password) {
-  const res  = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
-    method:  'POST',
+  const res = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ slug, password })
+    body: JSON.stringify({ slug, password })
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && data.error) throw new Error(data.error);
   return data.valid === true;
 }
 
-// ── PeerJS ID helpers ─────────────────────────────────────────────
 function hostPeerId(roomId, isPermanent) {
   return isPermanent
     ? `mychat8-perm-${roomId}-host`
@@ -87,27 +80,26 @@ function guestPeerId(roomId, isPermanent) {
     : `mychat8-${roomId}-${rand}`;
 }
 
-// ── Create temporary room ─────────────────────────────────────────
 function createTempRoom(type) {
   return { id: randomRoomId(CONFIG.ROOM_ID_LENGTH), type };
 }
 
-// ── Password strength (0..3) ──────────────────────────────────────
 function getPasswordStrength(pw) {
   if (!pw || pw.length < 4) return 0;
   let score = 0;
-  if (pw.length >= 8)  score++;
+  if (pw.length >= 8) score++;
   if (/[A-Z]/.test(pw)) score++;
   if (/[0-9!@#$%^&*]/.test(pw)) score++;
   return score;
 }
 
-// ── User Dashboard API ────────────────────────────────────────────
 function getUserSession() {
   try {
     const s = localStorage.getItem('mychat_user');
     return s ? JSON.parse(s) : null;
-  } catch(e) { return null; }
+  } catch (e) {
+    return null;
+  }
 }
 
 function setUserSession(username, token) {
@@ -121,20 +113,22 @@ function clearUserSession() {
 async function fetchUserRooms() {
   const u = getUserSession();
   if (!u) throw new Error('Not logged in');
+
   const res = await fetch(`${CONFIG.API_BASE}/rooms/user?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error || 'Failed to load rooms');
   return data.rooms || [];
 }
 
 async function deleteUserRoom(slug) {
   const u = getUserSession();
   if (!u) throw new Error('Not logged in');
+
   const res = await fetch(`${CONFIG.API_BASE}/rooms/${encodeURIComponent(slug)}?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
     method: 'DELETE'
   });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Deletion failed');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Deletion failed');
   return data;
 }
 
@@ -148,22 +142,60 @@ async function resolvePermanentRoomRole(slug, preferredRole = 'guest') {
   }
 }
 
-// ── Dead Drop Offline Messaging ───────────────────────────────────
+async function fetchContacts() {
+  const u = getUserSession();
+  if (!u) throw new Error('Not logged in');
+
+  const res = await fetch(`${CONFIG.API_BASE}/users/contacts?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to load contacts');
+  return data.contacts || [];
+}
+
+async function addContact(contactUsername) {
+  const u = getUserSession();
+  if (!u) throw new Error('Not logged in');
+
+  const res = await fetch(`${CONFIG.API_BASE}/users/contacts?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contactUsername })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add contact');
+  return data.contacts || [];
+}
+
+async function deleteUserAccount(password) {
+  const u = getUserSession();
+  if (!u) throw new Error('Not logged in');
+
+  const res = await fetch(`${CONFIG.API_BASE}/users/account`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: u.username, password })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete account');
+  clearUserSession();
+  return data;
+}
+
 async function sendDeadDropMessage(receiverUsername, messagePayload) {
   const u = getUserSession();
   if (!u) throw new Error('Must be logged in to send offline messages');
 
   const res = await fetch(`${CONFIG.API_BASE}/dead-drops`, {
     method: 'POST',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       'username': u.username,
       'token': u.token
     },
     body: JSON.stringify(messagePayload)
   });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Failed to send dead drop');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send dead drop');
 }
 
 async function fetchPendingDeadDrops() {
@@ -176,13 +208,14 @@ async function fetchPendingDeadDrops() {
       'token': u.token
     }
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   return data.drops || [];
 }
 
 async function confirmDeadDropDelivery(dropId) {
   const u = getUserSession();
   if (!u) return;
+
   await fetch(`${CONFIG.API_BASE}/dead-drops/${dropId}/confirm`, {
     method: 'POST',
     headers: {

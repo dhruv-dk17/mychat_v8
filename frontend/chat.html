@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="assets/css/main.css?v=20260321e" />
-  <link rel="stylesheet" href="assets/css/chat.css?v=20260321e" />
+  <link rel="stylesheet" href="assets/css/chat.css?v=20260322d" />
   <link rel="stylesheet" href="assets/css/anti-surveillance.css?v=20260321e" />
 </head>
 <body data-page="chat">
@@ -51,6 +51,12 @@
     <!-- Column 2: Chat List (300px) -->
     <aside class="chat-list-column">
       <div class="chat-list-header">
+        <div class="sidebar-section-title" id="sidebar-section-title">Chats</div>
+        <div class="mobile-dashboard-tabs">
+          <button class="mobile-dashboard-tab active" id="mobile-nav-chats-btn">Chats</button>
+          <button class="mobile-dashboard-tab" id="mobile-nav-contacts-btn">Contacts</button>
+          <button class="mobile-dashboard-tab" id="mobile-nav-settings-btn">Settings</button>
+        </div>
         <div class="search-box">
           <input type="text" placeholder="Search..." id="sidebar-search">
         </div>
@@ -68,8 +74,19 @@
       
       <!-- Placeholder when no chat selected -->
       <div class="chat-placeholder" id="chat-placeholder">
-        <div class="placeholder-icon">🔒</div>
-        <div class="placeholder-text">Select a chat to start messaging</div>
+        <div class="dashboard-hero-card">
+          <div class="dashboard-hero-kicker">Secure Workspace</div>
+          <div class="dashboard-hero-title" id="dashboard-hero-title">Welcome back</div>
+          <div class="dashboard-hero-text" id="dashboard-hero-text">Open a room, add a contact, or jump back into a conversation.</div>
+          <div class="dashboard-hero-meta">
+            <span class="dashboard-hero-badge" id="dashboard-room-count-badge">0 rooms</span>
+            <span class="dashboard-hero-badge" id="dashboard-contact-count-badge">0 contacts</span>
+          </div>
+          <div class="dashboard-hero-actions">
+            <button class="btn btn-primary" id="dashboard-quick-room">New Room</button>
+            <button class="btn btn-ghost" id="dashboard-quick-contact">Add Contact</button>
+          </div>
+        </div>
       </div>
 
       <!-- Active Chat View (hidden by default) -->
@@ -247,13 +264,25 @@
   
   <div class="modal-backdrop" id="new-chat-modal">
     <div class="modal-box" style="width: 320px;">
-      <div class="modal-title" style="text-align: center; margin-bottom: 1rem;">New Chat / Room</div>
+      <div class="modal-title" style="text-align: center; margin-bottom: 0.4rem;">New Chat / Room</div>
+      <div class="modal-subtitle" style="text-align:center; margin-bottom: 1rem;">Create a room, join a permanent room, or add a contact.</div>
       <div style="display:flex;flex-direction:column;gap:0.75rem;">
         <button class="btn btn-ghost w-100" id="btn-new-private">🔒 Private P2P</button>
         <button class="btn btn-ghost w-100" id="btn-new-group">👥 Group P2P</button>
         <hr style="border-color: rgba(255,255,255,0.1);"/>
-        <input type="text" class="input-field" id="new-chat-target" placeholder="Join ID or Contact Username" />
-        <button class="btn btn-primary w-100" id="btn-join-chat">Join / Message</button>
+        <div style="display:flex; flex-direction:column; gap:0.45rem;">
+          <label class="sidebar-label" for="new-room-slug">Permanent Room</label>
+          <input type="text" class="input-field" id="new-room-slug" placeholder="Room ID" maxlength="8" />
+          <input type="password" class="input-field" id="new-room-password" placeholder="Room password" />
+          <button class="btn btn-primary w-100" id="btn-create-perm-room">Create Permanent Room</button>
+          <button class="btn btn-ghost w-100" id="btn-join-perm-room">Join Permanent Room</button>
+        </div>
+        <hr style="border-color: rgba(255,255,255,0.1);"/>
+        <div style="display:flex; flex-direction:column; gap:0.45rem;">
+          <label class="sidebar-label" for="new-contact-username">Add Contact</label>
+          <input type="text" class="input-field" id="new-contact-username" placeholder="Username" maxlength="32" />
+          <button class="btn btn-ghost w-100" id="btn-add-contact">Add Contact</button>
+        </div>
       </div>
       <button class="btn btn-ghost" style="position: absolute; top:10px; right:10px; border:none; padding:10px;" onclick="hideModal('new-chat-modal')">✕</button>
     </div>
@@ -262,14 +291,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="assets/js/config.js?v=20260322a"></script>
   <script src="assets/js/crypto.js?v=20260321e"></script>
-  <script src="assets/js/rooms.js?v=20260322a"></script>
+  <script src="assets/js/rooms.js?v=20260322d"></script>
   <script src="assets/js/ui.js?v=20260322b"></script>
-  <script src="assets/js/peer.js?v=20260321e"></script>
+  <script src="assets/js/peer.js?v=20260322d"></script>
   <script src="assets/js/surveillance.js?v=20260321e"></script>
   <script src="assets/js/chat.js?v=20260321e"></script>
   <script src="assets/js/media.js?v=20260321e"></script>
   <script src="assets/js/rich-media.js?v=20260321e"></script>
-  <script src="assets/js/app.js?v=20260322b"></script>
-  <script src="assets/js/dashboard.js?v=v8"></script>
+  <script src="assets/js/app.js?v=20260322d"></script>
+  <script src="assets/js/dashboard.js?v=20260322d"></script>
 </body>
 </html>

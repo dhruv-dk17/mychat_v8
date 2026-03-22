@@ -7,7 +7,7 @@ let myRole = 'guest';
 let myUsername = '';
 let currentRoomId = '';
 let isRoomLocked = false;
-let currentRoomType = 'private';  // private | group | permanent
+let currentRoomType = 'private';  // private | direct | group | permanent
 let roomKey = '';
 let roomKeyCandidates = [];
 let pendingJoins = new Map(); // peerId -> conn
@@ -71,6 +71,72 @@ async function initAsHost(peerId, username, roomId, keyForE2EE, fallbackRoomKeys
   peerInstance.on('connection', handleIncomingConnection);
   peerInstance.on('call', handleIncomingCall);
   peerInstance.on('error', handlePeerError);
+}
+
+async function initDirectRoom(username, roomId, keyForE2EE, fallbackRoomKeys = []) {
+  await loadPeerJS();
+  myUsername = username;
+  currentRoomId = roomId;
+  currentRoomType = 'direct';
+  hostPeerIdForRoom = hostPeerId(roomId, false);
+  permanentRoomPassword = '';
+  stopPermanentReconnectLoop();
+  setRoomKeys(keyForE2EE || roomId, fallbackRoomKeys);
+
+  const directGuestId = guestPeerId(roomId, false);
+
+  try {
+    await claimDirectHostSlot(hostPeerIdForRoom);
+    myRole = 'host';
+    return 'host';
+  } catch (err) {
+    if (err?.type !== 'unavailable-id') {
+      handlePeerError(err);
+      throw err;
+    }
+  }
+
+  myRole = 'guest';
+  peerInstance = new Peer(directGuestId, CONFIG.PEERJS_CONFIG);
+  peerInstance.on('open', () => {
+    showModal('waiting-host-modal');
+    initiateHandshake(hostPeerIdForRoom, null, true);
+  });
+  peerInstance.on('call', handleIncomingCall);
+  peerInstance.on('error', handlePeerError);
+  return 'guest';
+}
+
+function claimDirectHostSlot(peerId) {
+  return new Promise((resolve, reject) => {
+    const directPeer = new Peer(peerId, CONFIG.PEERJS_CONFIG);
+    let settled = false;
+
+    directPeer.on('open', id => {
+      settled = true;
+      peerInstance = directPeer;
+      myRole = 'host';
+      hostPeerIdForRoom = peerId;
+      directPeer.on('connection', handleIncomingConnection);
+      directPeer.on('call', handleIncomingCall);
+      directPeer.on('error', handlePeerError);
+      console.log('Direct host open:', id);
+      updateConnectionUI('hosting');
+      resolve(id);
+    });
+
+    directPeer.on('error', err => {
+      if (settled) {
+        handlePeerError(err);
+        return;
+      }
+      try {
+        directPeer.destroy();
+      } catch (e) {
+      }
+      reject(err);
+    });
+  });
 }
 
 // ── Init as Guest ─────────────────────────────────────────────────
@@ -158,15 +224,15 @@ function handleIncomingConnection(conn) {
         if (msg.type !== 'join_request') { conn.close(); return; }
 
         // For permanent rooms — verify password
-        if (currentRoomType === 'permanent' && msg.passwordHash) {
+        if (currentRoomType === 'permanent') {
           try {
-            const res = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ slug: currentRoomId, passwordHash: msg.passwordHash })
-            });
-            const data = await res.json();
-            if (!data.valid) {
+            if (!msg.passwordHash || !currentPermanentPassword) {
+              conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Password required' }));
+              conn.close();
+              return;
+            }
+            const expectedHash = await sha256(currentPermanentPassword);
+            if (msg.passwordHash !== expectedHash) {
               conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Invalid password' }));
               conn.close();
               return;
@@ -178,10 +244,21 @@ function handleIncomingConnection(conn) {
           }
         }
 
+        if ((currentRoomType === 'private' || currentRoomType === 'direct') && connectedPeers.size >= 1) {
+          conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Room already has another participant' }));
+          conn.close();
+          return;
+        }
+
         // Group size limit
         if (currentRoomType === 'group' && connectedPeers.size >= CONFIG.MAX_GROUP_SIZE - 1) {
           conn.send(JSON.stringify({ type: 'join_response', accepted: false, reason: 'Room is full' }));
           conn.close();
+          return;
+        }
+
+        if (currentRoomType === 'direct') {
+          finalizeJoin(conn, msg.username, true);
           return;
         }
 
@@ -382,7 +459,7 @@ function handlePeerDisconnect(peerId) {
   updateOnlineCount();
   if (p.role !== 'host') return;
 
-  if (currentRoomType === 'private') {
+  if (currentRoomType === 'private' || currentRoomType === 'direct') {
     showRoomEndedModal();
     return;
   }
@@ -475,6 +552,8 @@ function handlePeerError(err) {
   if (err.type === 'peer-unavailable') {
     showToast('Host not found — is the room ID correct?', 'error');
     setTimeout(navigateHome, 2000);
+  } else if (err.type === 'unavailable-id') {
+    showToast('This room is already active in another tab or device', 'warning');
   } else if (err.type === 'network') {
     showToast('Network error — check your connection', 'warning');
   } else {
