@@ -4,12 +4,35 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
-const { PeerServer } = require('peer');
 const { initDB, pool } = require('./db/database');
 const roomRoutes = require('./routes/rooms');
 const healthRoutes = require('./routes/health');
 
 const app = express();
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://mychat-v8.web.app',
+  'https://mychat-v8.firebaseapp.com',
+  'http://localhost:10000',
+  'http://127.0.0.1:10000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500'
+];
+
+function normalizeOrigin(value) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+const allowedOrigins = Array.from(
+  new Set([
+    ...DEFAULT_ALLOWED_ORIGINS,
+    ...(process.env.ALLOWED_ORIGIN || '')
+      .split(',')
+      .map(normalizeOrigin)
+      .filter(Boolean)
+  ])
+);
 
 // Security headers
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -22,7 +45,13 @@ app.use(express.json({ limit: '10kb' }));
 
 // CORS — locked to Firebase Hosting URL only
 app.use(cors({
-  origin: 'https://mychat-v8.web.app',
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true
 }));
 
@@ -48,13 +77,6 @@ app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Internal server error' });
-});
-
-// PeerJS Server
-const peerServer = PeerServer({
-  port: 9000,
-  path: '/peerjs',
-  allow_discovery: false
 });
 
 // Cleanup Cron Job

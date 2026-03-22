@@ -5,6 +5,7 @@ const { z } = require('zod');
 const { pool } = require('../db/database');
 
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
+const getZodErrorMessage = error => error.issues?.[0]?.message || 'Invalid request';
 
 async function verifyUserSession(username, token) {
   if (!username || !token) return false;
@@ -42,7 +43,7 @@ router.post('/', limiter, async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     console.error('Dead drop store error:', e.message);
     res.status(500).json({ error: 'Failed to store dead drop' });
   }

@@ -127,7 +127,7 @@
         </div>
         <div>
           <label style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.3rem; display:block;">Password</label>
-          <input type="password" class="input-field" id="auth-password" placeholder="Min 4 chars" />
+          <input type="password" class="input-field" id="auth-password" placeholder="Min 8 chars" />
         </div>
         <div class="inline-error" id="auth-error" style="text-align:center;"></div>
         <button class="btn btn-primary w-100" id="auth-login-btn" style="padding:0.8rem;">Log In to Dashboard</button>
@@ -141,9 +141,9 @@
   </div>
 
   <!-- Scripts -->
-  <script src="assets/js/config.js?v=20260321e"></script>
+  <script src="assets/js/config.js?v=20260322a"></script>
   <script src="assets/js/crypto.js?v=20260321e"></script>
-  <script src="assets/js/rooms.js?v=20260321e"></script>
+  <script src="assets/js/rooms.js?v=20260322a"></script>
   <script src="assets/js/ui.js?v=20260321e"></script>
 
   <script>
@@ -166,6 +166,7 @@
           const userExp = document.getElementById('auth-username').value.trim();
           const passExp = document.getElementById('auth-password').value;
           if (!userExp || !passExp) { err.textContent = 'Fill all fields'; err.classList.add('visible'); return; }
+          if (passExp.length < 8) { err.textContent = 'Password must be at least 8 characters'; err.classList.add('visible'); return; }
           try {
              document.getElementById('auth-login-btn').textContent = 'Loading...';
              document.getElementById('auth-login-btn').disabled = true;
@@ -183,6 +184,7 @@
           const userExp = document.getElementById('auth-username').value.trim();
           const passExp = document.getElementById('auth-password').value;
           if (!userExp || !passExp) { err.textContent = 'Fill all fields'; err.classList.add('visible'); return; }
+          if (passExp.length < 8) { err.textContent = 'Password must be at least 8 characters'; err.classList.add('visible'); return; }
           try {
              document.getElementById('auth-register-btn').textContent = 'Loading...';
              document.getElementById('auth-register-btn').disabled = true;

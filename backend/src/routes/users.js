@@ -7,6 +7,7 @@ const { z } = require('zod');
 const { pool } = require('../db/database');
 
 const SALT_ROUNDS = 12;
+const getZodErrorMessage = error => error.issues?.[0]?.message || 'Invalid request';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
@@ -60,7 +61,7 @@ router.post('/register', authLimiter, async (req, res) => {
 
     res.json({ success: true, username: username.toLowerCase(), recoveryKey, token });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     if (e.code === '23505') return res.status(409).json({ error: 'Username already taken' });
     console.error('Register error:', e.message);
     res.status(500).json({ error: 'Registration failed' });
@@ -87,7 +88,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
     res.json({ success: true, username: username.toLowerCase(), token });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     console.error('Login error:', e.message);
     res.status(500).json({ error: 'Login failed' });
   }
@@ -108,7 +109,7 @@ router.post('/recover', authLimiter, async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     console.error('Recovery error:', e.message);
     res.status(500).json({ error: 'Recovery failed' });
   }
@@ -132,7 +133,7 @@ router.delete('/account', authLimiter, async (req, res) => {
     await pool.query('DELETE FROM users WHERE username = $1', [username.toLowerCase()]);
     res.json({ success: true, message: 'Account deleted' });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     console.error('Delete account error:', e.message);
     res.status(500).json({ error: 'Failed to delete account' });
   }

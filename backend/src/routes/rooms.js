@@ -6,6 +6,7 @@ const { z } = require('zod');
 const { pool } = require('../db/database');
 
 const SALT_ROUNDS = 12;
+const getZodErrorMessage = error => error.issues?.[0]?.message || 'Invalid request';
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -57,7 +58,7 @@ router.post('/register', limiter, async (req, res) => {
     );
     res.json({ success: true, slug: slug.toLowerCase() });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     if (e.code === '23505') return res.status(409).json({ error: 'Room ID already taken' });
     console.error('Register error:', e.message);
     res.status(500).json({ error: 'Registration failed' });
@@ -73,7 +74,7 @@ router.post('/verify-password', async (req, res) => {
     const valid = await bcrypt.compare(password, r.rows[0].password_hash);
     res.json({ valid });
   } catch (e) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors[0].message });
+    if (e instanceof z.ZodError) return res.status(400).json({ error: getZodErrorMessage(e) });
     console.error('Verify pw error:', e.message);
     res.status(500).json({ error: 'Verification failed' });
   }

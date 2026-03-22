@@ -1,26 +1,40 @@
 'use strict';
 
+async function postJsonWithTimeout(path, payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${CONFIG.API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    if (!data.success) throw new Error(data.error || 'Request failed');
+    return data;
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Backend timed out. Render may be asleep or the API is down.');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Cannot reach backend. Check the Render URL, CORS, and service status.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ── User Auth API ───────────────────────────────────────────────────
 async function registerUser(username, password) {
-  const res = await fetch(`${CONFIG.API_BASE}/users/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Registration failed');
-  return data;
+  return postJsonWithTimeout('/users/register', { username, password });
 }
 
 async function loginUser(username, password) {
-  const res = await fetch(`${CONFIG.API_BASE}/users/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Login failed');
-  return data;
+  return postJsonWithTimeout('/users/login', { username, password });
 }
 
 // ── Room availability check ───────────────────────────────────────

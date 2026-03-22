@@ -129,6 +129,7 @@ async function initHomePage() {
     const u = uInput?.value.trim();
     const p = pInput?.value;
     if (!u || !p) { if (aErr) aErr.textContent = 'Please fill all fields'; return; }
+    if (p.length < 8) { if (aErr) aErr.textContent = 'Password must be at least 8 characters'; return; }
     
     if (aErr) { aErr.textContent = ''; aErr.classList.remove('visible'); }
     loginBtn.disabled = true; regBtn.disabled = true;
