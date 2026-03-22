@@ -8,7 +8,9 @@ const DASHBOARD_VIEW = {
 
 let currentDashboardView = DASHBOARD_VIEW.CHATS;
 let dashboardRooms = [];
-let dashboardContacts = [];
+let acceptedContacts = [];
+let incomingContactRequests = [];
+let outgoingContactRequests = [];
 let sidebarSearchTerm = '';
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -29,14 +31,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function hydrateDashboardChrome(session) {
   const navAvatar = document.getElementById('nav-avatar');
-  if (navAvatar) {
-    navAvatar.textContent = session.username.substring(0, 2).toUpperCase();
-  }
+  if (navAvatar) navAvatar.textContent = session.username.substring(0, 2).toUpperCase();
   updateDashboardHero(session);
 }
 
 function bindDashboardEvents() {
   document.getElementById('nav-logout-btn')?.addEventListener('click', logoutToHome);
+
   bindDashboardViewButton('nav-chats-btn', DASHBOARD_VIEW.CHATS);
   bindDashboardViewButton('nav-contacts-btn', DASHBOARD_VIEW.CONTACTS);
   bindDashboardViewButton('nav-settings-btn', DASHBOARD_VIEW.SETTINGS);
@@ -45,14 +46,19 @@ function bindDashboardEvents() {
   bindDashboardViewButton('mobile-nav-settings-btn', DASHBOARD_VIEW.SETTINGS);
 
   const searchInput = document.getElementById('sidebar-search');
-  searchInput?.addEventListener('input', e => {
-    sidebarSearchTerm = e.target.value.trim().toLowerCase();
+  searchInput?.addEventListener('input', event => {
+    sidebarSearchTerm = event.target.value.trim().toLowerCase();
     renderSidebar();
   });
 
   const slugInput = document.getElementById('new-room-slug');
   slugInput?.addEventListener('input', () => {
     slugInput.value = slugInput.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  });
+
+  const contactInput = document.getElementById('new-contact-username');
+  contactInput?.addEventListener('input', () => {
+    contactInput.value = contactInput.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
   });
 
   document.getElementById('sidebar-new-chat')?.addEventListener('click', openComposerModal);
@@ -65,23 +71,10 @@ function bindDashboardEvents() {
     openComposerModal();
   });
 
-  document.getElementById('btn-new-private')?.addEventListener('click', () => {
-    const session = getUserSession();
-    if (!session) return;
-    const room = createTempRoom('private');
-    navigateToChat(room.id, 'private', session.username, 'host');
-  });
-
-  document.getElementById('btn-new-group')?.addEventListener('click', () => {
-    const session = getUserSession();
-    if (!session) return;
-    const room = createTempRoom('group');
-    navigateToChat(room.id, 'group', session.username, 'host');
-  });
-
+  document.getElementById('btn-new-group')?.addEventListener('click', createGroupRoomFromModal);
   document.getElementById('btn-create-perm-room')?.addEventListener('click', createPermanentRoomFromModal);
   document.getElementById('btn-join-perm-room')?.addEventListener('click', joinPermanentRoomFromModal);
-  document.getElementById('btn-add-contact')?.addEventListener('click', addContactFromModal);
+  document.getElementById('btn-add-contact')?.addEventListener('click', sendContactRequestFromModal);
 }
 
 function bindDashboardViewButton(id, view) {
@@ -111,15 +104,23 @@ function syncChatShell() {
 async function refreshDashboardData() {
   const [roomsResult, contactsResult] = await Promise.allSettled([
     fetchUserRooms(),
-    fetchContacts()
+    fetchContactState()
   ]);
 
   dashboardRooms = roomsResult.status === 'fulfilled'
-    ? normalizeDashboardRooms(roomsResult.value)
+    ? normalizeRoomList(roomsResult.value)
     : [];
-  dashboardContacts = contactsResult.status === 'fulfilled'
-    ? normalizeDashboardContacts(contactsResult.value)
-    : [];
+
+  if (contactsResult.status === 'fulfilled') {
+    const contactState = contactsResult.value || {};
+    acceptedContacts = normalizeUsernameList(contactState.contacts);
+    incomingContactRequests = normalizeUsernameList(contactState.incomingRequests);
+    outgoingContactRequests = normalizeUsernameList(contactState.outgoingRequests);
+  } else {
+    acceptedContacts = [];
+    incomingContactRequests = [];
+    outgoingContactRequests = [];
+  }
 
   if (roomsResult.status === 'rejected') {
     console.warn('Failed to load rooms', roomsResult.reason);
@@ -127,22 +128,23 @@ async function refreshDashboardData() {
   if (contactsResult.status === 'rejected') {
     console.warn('Failed to load contacts', contactsResult.reason);
   }
+
   updateDashboardHero(getUserSession());
 }
 
-function normalizeDashboardRooms(rooms) {
-  return Array.isArray(rooms)
-    ? rooms
-        .filter(room => room && typeof room.slug === 'string')
-        .map(room => ({ ...room, slug: room.slug.toLowerCase() }))
-        .sort((left, right) => left.slug.localeCompare(right.slug))
-    : [];
+function normalizeRoomList(rooms) {
+  if (!Array.isArray(rooms)) return [];
+  return rooms
+    .filter(room => room && typeof room.slug === 'string')
+    .map(room => ({ ...room, slug: room.slug.toLowerCase() }))
+    .sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
-function normalizeDashboardContacts(contacts) {
+function normalizeUsernameList(values) {
+  if (!Array.isArray(values)) return [];
   return Array.from(new Set(
-    (Array.isArray(contacts) ? contacts : [])
-      .map(contact => String(contact || '').trim().toLowerCase())
+    values
+      .map(value => String(value || '').trim().toLowerCase())
       .filter(Boolean)
   )).sort((left, right) => left.localeCompare(right));
 }
@@ -153,22 +155,20 @@ function updateDashboardHero(session) {
   const roomBadge = document.getElementById('dashboard-room-count-badge');
   const contactBadge = document.getElementById('dashboard-contact-count-badge');
 
-  if (titleEl) {
-    titleEl.textContent = session ? `Welcome, ${session.username}` : 'Welcome back';
-  }
+  if (titleEl) titleEl.textContent = session ? `Welcome, ${session.username}` : 'Welcome';
+
   if (textEl) {
-    textEl.textContent = currentDashboardView === DASHBOARD_VIEW.CONTACTS
-      ? 'Keep your contact list tidy so direct rooms are one tap away.'
-      : currentDashboardView === DASHBOARD_VIEW.SETTINGS
-        ? 'Manage your account and understand how rooms behave before you jump back in.'
-        : 'Open a room, add a contact, or jump back into a conversation.';
+    if (currentDashboardView === DASHBOARD_VIEW.CONTACTS) {
+      textEl.textContent = 'Send contact requests by username. Once accepted, direct chat opens instantly.';
+    } else if (currentDashboardView === DASHBOARD_VIEW.SETTINGS) {
+      textEl.textContent = 'Manage your account and room behavior from one place.';
+    } else {
+      textEl.textContent = 'Direct messages work like WhatsApp. Groups and permanent rooms stay available.';
+    }
   }
-  if (roomBadge) {
-    roomBadge.textContent = `${dashboardRooms.length} room${dashboardRooms.length === 1 ? '' : 's'}`;
-  }
-  if (contactBadge) {
-    contactBadge.textContent = `${dashboardContacts.length} contact${dashboardContacts.length === 1 ? '' : 's'}`;
-  }
+
+  if (roomBadge) roomBadge.textContent = `${dashboardRooms.length} permanent room${dashboardRooms.length === 1 ? '' : 's'}`;
+  if (contactBadge) contactBadge.textContent = `${acceptedContacts.length} contact${acceptedContacts.length === 1 ? '' : 's'}`;
 }
 
 function setDashboardView(view) {
@@ -202,19 +202,17 @@ function updateSidebarChrome() {
         : 'Settings';
   }
 
-  if (searchBox) {
-    searchBox.style.display = currentDashboardView === DASHBOARD_VIEW.SETTINGS ? 'none' : 'flex';
-  }
+  if (searchBox) searchBox.style.display = currentDashboardView === DASHBOARD_VIEW.SETTINGS ? 'none' : 'flex';
 
   if (searchInput) {
     searchInput.placeholder = currentDashboardView === DASHBOARD_VIEW.CONTACTS
-      ? 'Search contacts...'
-      : 'Search rooms or contacts...';
+      ? 'Search contacts and requests...'
+      : 'Search chats...';
   }
 
   if (newBtn) {
     newBtn.style.display = currentDashboardView === DASHBOARD_VIEW.SETTINGS ? 'none' : 'block';
-    newBtn.textContent = currentDashboardView === DASHBOARD_VIEW.CONTACTS ? '+ Add Contact' : '+ New';
+    newBtn.textContent = currentDashboardView === DASHBOARD_VIEW.CONTACTS ? '+ Add Username' : '+ New Chat';
   }
 }
 
@@ -238,21 +236,46 @@ function renderSidebar() {
 }
 
 function renderChatsView(container) {
-  const params = getChatParams();
   const session = getUserSession();
+  const params = getChatParams();
   if (!session) return;
 
-  const filteredRooms = dashboardRooms.filter(room => room.slug.toLowerCase().includes(sidebarSearchTerm));
-  const filteredContacts = dashboardContacts.filter(contact => contact.toLowerCase().includes(sidebarSearchTerm));
+  const filteredContacts = acceptedContacts.filter(contact => contact.includes(sidebarSearchTerm));
+  const filteredRooms = dashboardRooms.filter(room => room.slug.includes(sidebarSearchTerm));
 
-  if (!filteredRooms.length && !filteredContacts.length) {
-    renderEmptyState(
-      container,
-      sidebarSearchTerm
-        ? `No chats match "${sidebarSearchTerm}".`
-        : 'No rooms or direct messages yet. Use + New to get started.'
-    );
+  const groupQuick = document.createElement('div');
+  groupQuick.className = 'sidebar-card';
+  groupQuick.innerHTML = `
+    <div class="sidebar-label">Quick Actions</div>
+    <div class="sidebar-note">Start a new group, open a permanent room, or continue direct messages.</div>
+    <button class="btn btn-ghost w-100" id="sidebar-start-group-btn">Start Group Chat</button>
+  `;
+  container.appendChild(groupQuick);
+  document.getElementById('sidebar-start-group-btn')?.addEventListener('click', createGroupRoomFromSidebar);
+
+  if (!filteredContacts.length && !filteredRooms.length) {
+    renderEmptyState(container, sidebarSearchTerm
+      ? `No chats match "${sidebarSearchTerm}".`
+      : 'No chats yet. Add a contact request or create a room.');
     return;
+  }
+
+  if (filteredContacts.length) {
+    container.appendChild(createSidebarHeading('Direct Messages'));
+    filteredContacts.forEach(contact => {
+      const dmRoomId = buildDirectMessageRoomId(session.username, contact);
+      const isActive = params.type === 'direct'
+        ? (params.peer === contact || params.roomId === dmRoomId)
+        : false;
+      const item = createSidebarItem({
+        title: contact,
+        desc: 'Secure direct chat',
+        avatar: contact.substring(0, 2).toUpperCase(),
+        active: isActive
+      });
+      item.addEventListener('click', () => openDirectConversation(contact));
+      container.appendChild(item);
+    });
   }
 
   if (filteredRooms.length) {
@@ -260,62 +283,69 @@ function renderChatsView(container) {
     filteredRooms.forEach(room => {
       const item = createSidebarItem({
         title: room.slug,
-        desc: 'Permanent room',
-        avatar: 'R',
-        active: params.roomId === room.slug,
-        avatarStyle: 'background:rgba(139,92,246,0.2);color:var(--accent-bright);'
+        desc: 'Password-protected room',
+        avatar: 'PR',
+        active: params.type === 'permanent' && params.roomId === room.slug,
+        avatarStyle: 'background:rgba(34,197,94,0.2);color:#8ef6b3;'
       });
       item.addEventListener('click', () => openOwnedPermanentRoom(room.slug));
-      container.appendChild(item);
-    });
-  }
-
-  if (filteredContacts.length) {
-    container.appendChild(createSidebarHeading('Direct Messages'));
-    filteredContacts.forEach(contact => {
-      const dmRoomId = buildDirectMessageRoomId(session.username, contact);
-      const item = createSidebarItem({
-        title: contact,
-        desc: 'Direct message room',
-        avatar: contact.substring(0, 2).toUpperCase(),
-        active: params.roomId === dmRoomId
-      });
-      item.addEventListener('click', () => openDirectConversation(contact));
       container.appendChild(item);
     });
   }
 }
 
 function renderContactsView(container) {
-  const filteredContacts = dashboardContacts.filter(contact => contact.toLowerCase().includes(sidebarSearchTerm));
+  const filteredContacts = acceptedContacts.filter(contact => contact.includes(sidebarSearchTerm));
+  const filteredIncoming = incomingContactRequests.filter(contact => contact.includes(sidebarSearchTerm));
+  const filteredOutgoing = outgoingContactRequests.filter(contact => contact.includes(sidebarSearchTerm));
 
-  const note = document.createElement('div');
-  note.className = 'sidebar-card';
-  note.innerHTML = `
-    <div class="sidebar-label">Contacts</div>
-    <div class="sidebar-note">Add usernames here, then open direct message rooms from the list.</div>
+  const summary = document.createElement('div');
+  summary.className = 'sidebar-card';
+  summary.innerHTML = `
+    <div class="sidebar-label">Contact Requests</div>
+    <div class="sidebar-meta">
+      <span class="sidebar-badge">${incomingContactRequests.length} incoming</span>
+      <span class="sidebar-badge">${outgoingContactRequests.length} outgoing</span>
+    </div>
+    <div class="sidebar-note">Direct chat unlocks only after acceptance.</div>
   `;
-  container.appendChild(note);
+  container.appendChild(summary);
 
-  if (!filteredContacts.length) {
-    renderEmptyState(
-      container,
-      sidebarSearchTerm
-        ? `No contacts match "${sidebarSearchTerm}".`
-        : 'No contacts yet. Use + Add Contact to start a direct conversation.'
-    );
+  if (!filteredContacts.length && !filteredIncoming.length && !filteredOutgoing.length) {
+    renderEmptyState(container, sidebarSearchTerm
+      ? `No contacts match "${sidebarSearchTerm}".`
+      : 'No contacts yet. Send a username request to start.');
     return;
   }
 
-  filteredContacts.forEach(contact => {
-    const item = createSidebarItem({
-      title: contact,
-      desc: 'Tap to open direct message room',
-      avatar: contact.substring(0, 2).toUpperCase()
+  if (filteredIncoming.length) {
+    container.appendChild(createSidebarHeading('Incoming Requests'));
+    filteredIncoming.forEach(username => {
+      const requestItem = createRequestItem(username, 'incoming');
+      container.appendChild(requestItem);
     });
-    item.addEventListener('click', () => openDirectConversation(contact));
-    container.appendChild(item);
-  });
+  }
+
+  if (filteredOutgoing.length) {
+    container.appendChild(createSidebarHeading('Sent Requests'));
+    filteredOutgoing.forEach(username => {
+      const requestItem = createRequestItem(username, 'outgoing');
+      container.appendChild(requestItem);
+    });
+  }
+
+  if (filteredContacts.length) {
+    container.appendChild(createSidebarHeading('Accepted Contacts'));
+    filteredContacts.forEach(contact => {
+      const item = createSidebarItem({
+        title: contact,
+        desc: 'Tap to open direct chat',
+        avatar: contact.substring(0, 2).toUpperCase()
+      });
+      item.addEventListener('click', () => openDirectConversation(contact));
+      container.appendChild(item);
+    });
+  }
 }
 
 function renderSettingsView(container) {
@@ -328,13 +358,13 @@ function renderSettingsView(container) {
         <div class="sidebar-label">Signed In As</div>
         <div class="chat-list-item-title">${escHtml(session.username)}</div>
         <div class="sidebar-meta">
-          <span class="sidebar-badge">${dashboardRooms.length} room${dashboardRooms.length === 1 ? '' : 's'}</span>
-          <span class="sidebar-badge">${dashboardContacts.length} contact${dashboardContacts.length === 1 ? '' : 's'}</span>
+          <span class="sidebar-badge">${acceptedContacts.length} contacts</span>
+          <span class="sidebar-badge">${dashboardRooms.length} rooms</span>
         </div>
       </div>
       <div class="sidebar-card">
-        <div class="sidebar-label">How Joining Works</div>
-        <div class="sidebar-note">Permanent rooms need the shared room password. Direct messages use a deterministic 1-to-1 room so one user hosts and the other joins.</div>
+        <div class="sidebar-label">Architecture</div>
+        <div class="sidebar-note">Direct chats, group sessions, and permanent rooms use peer-to-peer encrypted transport.</div>
       </div>
       <div class="sidebar-actions">
         <button class="btn btn-ghost w-100" id="settings-logout-inline">Log Out</button>
@@ -350,7 +380,7 @@ function renderSettingsView(container) {
 function createSidebarHeading(text) {
   const heading = document.createElement('div');
   heading.className = 'sidebar-label';
-  heading.style.padding = '0.25rem 0.5rem 0';
+  heading.style.padding = '0.3rem 0.55rem 0';
   heading.textContent = text;
   return heading;
 }
@@ -382,6 +412,33 @@ function createSidebarItem({ title, desc, avatar, active = false, avatarStyle = 
   return item;
 }
 
+function createRequestItem(username, type) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'sidebar-card';
+
+  if (type === 'incoming') {
+    wrapper.innerHTML = `
+      <div class="chat-list-item-title">${escHtml(username)}</div>
+      <div class="sidebar-note">wants to connect with you</div>
+      <div class="sidebar-actions-row">
+        <button class="btn btn-primary w-100">Accept</button>
+        <button class="btn btn-ghost w-100">Reject</button>
+      </div>
+    `;
+    const [acceptBtn, rejectBtn] = wrapper.querySelectorAll('button');
+    acceptBtn?.addEventListener('click', () => respondToRequest(username, 'accept'));
+    rejectBtn?.addEventListener('click', () => respondToRequest(username, 'reject'));
+  } else {
+    wrapper.innerHTML = `
+      <div class="chat-list-item-title">${escHtml(username)}</div>
+      <div class="sidebar-note">request pending</div>
+      <span class="sidebar-status-pill">Pending</span>
+    `;
+  }
+
+  return wrapper;
+}
+
 function renderEmptyState(container, message) {
   const empty = document.createElement('div');
   empty.className = 'sidebar-empty';
@@ -393,7 +450,7 @@ function renderEmptyState(container, message) {
 }
 
 function buildDirectMessageRoomId(userA, userB) {
-  const normalized = [userA, userB].map(v => v.toLowerCase()).sort().join(':');
+  const normalized = [userA, userB].map(value => value.toLowerCase()).sort().join(':');
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let hash = 5381;
 
@@ -408,21 +465,39 @@ function buildDirectMessageRoomId(userA, userB) {
     value = ((value ^ salt) * 2654435761) >>> 0;
     roomId += alphabet[value % alphabet.length];
   }
+
   return roomId;
 }
 
 function resolveDirectMessageRole(selfUsername, otherUsername) {
-  const [hostUsername] = [selfUsername, otherUsername].map(v => v.toLowerCase()).sort();
+  const [hostUsername] = [selfUsername, otherUsername].map(value => value.toLowerCase()).sort();
   return selfUsername.toLowerCase() === hostUsername ? 'host' : 'guest';
 }
 
 async function openDirectConversation(contactUsername) {
+  if (!acceptedContacts.includes(contactUsername.toLowerCase())) {
+    showToast('Contact must accept first', 'warning');
+    return;
+  }
+
   const session = getUserSession();
   if (!session) return;
 
   const roomId = buildDirectMessageRoomId(session.username, contactUsername);
   const role = resolveDirectMessageRole(session.username, contactUsername);
-  navigateToChat(roomId, 'direct', session.username, role);
+  navigateToChat(roomId, 'direct', session.username, role, null, { peer: contactUsername });
+}
+
+function createGroupRoomFromSidebar() {
+  const session = getUserSession();
+  if (!session) return;
+  const room = createTempRoom('group');
+  navigateToChat(room.id, 'group', session.username, 'host');
+}
+
+function createGroupRoomFromModal() {
+  hideModal('new-chat-modal');
+  createGroupRoomFromSidebar();
 }
 
 async function createPermanentRoomFromModal() {
@@ -434,16 +509,12 @@ async function createPermanentRoomFromModal() {
   const slug = slugInput?.value.trim().toLowerCase();
   const password = passwordInput?.value || '';
 
-  if (!slug || slug.length < CONFIG.PERMANENT_ID_MIN) {
-    showToast('Enter a valid room ID', 'warning');
-    return;
-  }
-  if (slug.length > CONFIG.PERMANENT_ID_MAX) {
-    showToast('Room ID is too long', 'warning');
+  if (!slug || slug.length < CONFIG.PERMANENT_ID_MIN || slug.length > CONFIG.PERMANENT_ID_MAX) {
+    showToast('Enter a valid room ID (3-8 chars)', 'warning');
     return;
   }
   if (!password || password.length < 4) {
-    showToast('Use a room password with at least 4 characters', 'warning');
+    showToast('Room password must be at least 4 characters', 'warning');
     return;
   }
 
@@ -456,33 +527,8 @@ async function createPermanentRoomFromModal() {
     await refreshDashboardData();
     setDashboardView(DASHBOARD_VIEW.CHATS);
     navigateToChat(slug, 'permanent', session.username, 'host');
-  } catch (e) {
-    showToast(e.message || 'Could not create room', 'error');
-  }
-}
-
-async function openOwnedPermanentRoom(slug) {
-  const session = getUserSession();
-  if (!session) return;
-
-  let password = sessionStorage.getItem(`joinPassword_${slug}`) || '';
-  if (!password) {
-    password = prompt(`Enter password for ${slug}`) || '';
-  }
-  if (!password) return;
-
-  try {
-    const valid = await verifyRoomPassword(slug, password);
-    if (!valid) {
-      sessionStorage.removeItem(`joinPassword_${slug}`);
-      showToast('Incorrect password', 'error');
-      return;
-    }
-
-    sessionStorage.setItem(`joinPassword_${slug}`, password);
-    navigateToChat(slug, 'permanent', session.username, 'host');
-  } catch (e) {
-    showToast(e.message || 'Could not join room', 'error');
+  } catch (error) {
+    showToast(error.message || 'Could not create room', 'error');
   }
 }
 
@@ -495,19 +541,19 @@ async function joinPermanentRoomFromModal() {
   const slug = slugInput?.value.trim().toLowerCase();
   const password = passwordInput?.value || '';
 
-  if (!slug || slug.length < CONFIG.PERMANENT_ID_MIN) {
-    showToast('Enter a valid room ID', 'warning');
+  if (!slug) {
+    showToast('Enter room ID', 'warning');
     return;
   }
   if (!password) {
-    showToast('Enter the room password', 'warning');
+    showToast('Enter room password', 'warning');
     return;
   }
 
   try {
     const valid = await verifyRoomPassword(slug, password);
     if (!valid) {
-      showToast('Incorrect password', 'error');
+      showToast('Incorrect room password', 'error');
       return;
     }
 
@@ -518,19 +564,42 @@ async function joinPermanentRoomFromModal() {
 
     const role = await resolvePermanentRoomRole(slug, 'guest');
     navigateToChat(slug, 'permanent', session.username, role);
-  } catch (e) {
-    showToast(e.message || 'Could not join room', 'error');
+  } catch (error) {
+    showToast(error.message || 'Could not join room', 'error');
   }
 }
 
-async function addContactFromModal() {
+async function openOwnedPermanentRoom(slug) {
+  const session = getUserSession();
+  if (!session) return;
+
+  let password = sessionStorage.getItem(`joinPassword_${slug}`) || '';
+  if (!password) password = prompt(`Enter password for ${slug}`) || '';
+  if (!password) return;
+
+  try {
+    const valid = await verifyRoomPassword(slug, password);
+    if (!valid) {
+      sessionStorage.removeItem(`joinPassword_${slug}`);
+      showToast('Incorrect password', 'error');
+      return;
+    }
+    sessionStorage.setItem(`joinPassword_${slug}`, password);
+    const role = await resolvePermanentRoomRole(slug, 'guest');
+    navigateToChat(slug, 'permanent', session.username, role);
+  } catch (error) {
+    showToast(error.message || 'Could not join room', 'error');
+  }
+}
+
+async function sendContactRequestFromModal() {
   const input = document.getElementById('new-contact-username');
   const session = getUserSession();
   if (!input || !session) return;
 
   const username = input.value.trim().toLowerCase();
   if (!username) {
-    showToast('Enter a contact username', 'warning');
+    showToast('Enter a username', 'warning');
     return;
   }
   if (username === session.username.toLowerCase()) {
@@ -539,31 +608,52 @@ async function addContactFromModal() {
   }
 
   try {
-    dashboardContacts = normalizeDashboardContacts(await addContact(username));
+    const result = await sendContactRequest(username);
     input.value = '';
     hideModal('new-chat-modal');
-    showToast(`Added ${username} to contacts`, 'success');
-    updateDashboardHero(session);
+    await refreshDashboardData();
     setDashboardView(DASHBOARD_VIEW.CONTACTS);
-  } catch (e) {
-    showToast(e.message || 'Failed to add contact', 'error');
+
+    if (result.status === 'accepted') {
+      showToast(`@${username} is now in your contacts`, 'success');
+      return;
+    }
+    if (result.status === 'already_contact') {
+      showToast(`@${username} is already in contacts`, 'info');
+      return;
+    }
+    showToast(`Request sent to @${username}`, 'success');
+  } catch (error) {
+    showToast(error.message || 'Failed to send request', 'error');
+  }
+}
+
+async function respondToRequest(fromUsername, action) {
+  try {
+    await respondContactRequest(fromUsername, action);
+    await refreshDashboardData();
+    setDashboardView(DASHBOARD_VIEW.CONTACTS);
+    if (action === 'accept') {
+      showToast(`Accepted @${fromUsername}`, 'success');
+    } else {
+      showToast(`Rejected @${fromUsername}`, 'info');
+    }
+  } catch (error) {
+    showToast(error.message || 'Failed to update request', 'error');
   }
 }
 
 async function deleteAccountFromSettings() {
-  if (!confirm('Delete your account and all owned permanent rooms? This cannot be undone.')) {
-    return;
-  }
-
-  const password = prompt('Enter your current account password to confirm deletion:');
+  if (!confirm('Delete your account and all owned permanent rooms? This cannot be undone.')) return;
+  const password = prompt('Enter your account password to confirm:');
   if (!password) return;
 
   try {
     await deleteUserAccount(password);
     showToast('Account deleted', 'success');
     window.location.href = 'index.html';
-  } catch (e) {
-    showToast(e.message || 'Failed to delete account', 'error');
+  } catch (error) {
+    showToast(error.message || 'Failed to delete account', 'error');
   }
 }
 

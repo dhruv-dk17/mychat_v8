@@ -99,20 +99,16 @@ async function initHomePage() {
       const btn = document.getElementById('settings-delete-account-btn');
       btn.disabled = true; btn.textContent = 'Deleting...';
       try {
-        const u = getUserSession();
-        if (!u) throw new Error('Not logged in');
-        const res = await fetch(`${CONFIG.API_BASE}/users/account?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
-          method: 'DELETE'
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Deletion failed');
-        
-        clearUserSession();
+        const password = prompt('Enter your account password to confirm deletion:');
+        if (!password) throw new Error('Deletion canceled');
+        await deleteUserAccount(password);
         refreshAuthState();
         hideModal('user-settings-modal');
         showToast('Account and rooms permanently deleted', 'success');
       } catch (e) {
-        showToast(e.message, 'error');
+        if (e.message !== 'Deletion canceled') {
+          showToast(e.message, 'error');
+        }
       } finally {
         btn.disabled = false; btn.textContent = 'Delete Account & Rooms';
       }
@@ -539,12 +535,22 @@ async function initChatPage() {
 
   // Update top bar
   const ridEl = document.getElementById('room-id-display');
+  const directPeerLabel = isDirect && params.peer ? `@${params.peer}` : '';
   if (ridEl) {
-    ridEl.textContent = params.roomId;
-    ridEl.addEventListener('click', () => copyToClipboard(params.roomId));
+    ridEl.textContent = directPeerLabel || params.roomId;
+    ridEl.title = isDirect
+      ? `Direct chat with ${directPeerLabel || 'contact'}`
+      : 'Click to copy Room ID';
+    ridEl.addEventListener('click', () => {
+      copyToClipboard(isDirect ? (params.peer || params.roomId) : params.roomId);
+    });
   }
   const badge = document.querySelector('.room-type-badge');
-  if (badge) badge.textContent = (params.type || 'PRIVATE').toUpperCase();
+  if (badge) {
+    badge.textContent = isDirect
+      ? 'DIRECT'
+      : (params.type || 'PRIVATE').toUpperCase();
+  }
 
   if (currentRoomType === 'group') {
     const callBtn = document.getElementById('call-btn');

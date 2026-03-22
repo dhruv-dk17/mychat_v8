@@ -20,9 +20,25 @@ async function initDB() {
         public_identity_key TEXT,
         session_token    VARCHAR(128),
         contacts         JSONB DEFAULT '[]'::jsonb,
+        contact_requests JSONB DEFAULT '[]'::jsonb,
+        outgoing_contact_requests JSONB DEFAULT '[]'::jsonb,
         last_active      TIMESTAMP DEFAULT NOW(),
         created_at       TIMESTAMP DEFAULT NOW()
       )
+    `);
+
+    // Backward-safe schema upgrades for existing databases.
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS contacts JSONB DEFAULT '[]'::jsonb
+    `);
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS contact_requests JSONB DEFAULT '[]'::jsonb
+    `);
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS outgoing_contact_requests JSONB DEFAULT '[]'::jsonb
     `);
     
     await client.query(`

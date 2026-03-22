@@ -143,27 +143,74 @@ async function resolvePermanentRoomRole(slug, preferredRole = 'guest') {
 }
 
 async function fetchContacts() {
+  const state = await fetchContactState();
+  return state.contacts;
+}
+
+async function addContact(contactUsername) {
+  const state = await sendContactRequest(contactUsername);
+  return state.contacts;
+}
+
+function normalizeUsernameArray(values) {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(
+    values
+      .map(value => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
+  )).sort((left, right) => left.localeCompare(right));
+}
+
+async function fetchContactState() {
   const u = getUserSession();
   if (!u) throw new Error('Not logged in');
 
   const res = await fetch(`${CONFIG.API_BASE}/users/contacts?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Failed to load contacts');
-  return data.contacts || [];
+  return {
+    contacts: normalizeUsernameArray(data.contacts),
+    incomingRequests: normalizeUsernameArray(data.incomingRequests),
+    outgoingRequests: normalizeUsernameArray(data.outgoingRequests)
+  };
 }
 
-async function addContact(contactUsername) {
+async function sendContactRequest(contactUsername) {
   const u = getUserSession();
   if (!u) throw new Error('Not logged in');
 
-  const res = await fetch(`${CONFIG.API_BASE}/users/contacts?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
+  const res = await fetch(`${CONFIG.API_BASE}/users/contacts/request?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contactUsername })
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add contact');
-  return data.contacts || [];
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send contact request');
+  return {
+    status: data.status || 'pending',
+    contacts: normalizeUsernameArray(data.contacts),
+    incomingRequests: normalizeUsernameArray(data.incomingRequests),
+    outgoingRequests: normalizeUsernameArray(data.outgoingRequests)
+  };
+}
+
+async function respondContactRequest(fromUsername, action) {
+  const u = getUserSession();
+  if (!u) throw new Error('Not logged in');
+
+  const res = await fetch(`${CONFIG.API_BASE}/users/contacts/respond?username=${encodeURIComponent(u.username)}&token=${encodeURIComponent(u.token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fromUsername, action })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update contact request');
+  return {
+    status: data.status || action,
+    contacts: normalizeUsernameArray(data.contacts),
+    incomingRequests: normalizeUsernameArray(data.incomingRequests),
+    outgoingRequests: normalizeUsernameArray(data.outgoingRequests)
+  };
 }
 
 async function deleteUserAccount(password) {

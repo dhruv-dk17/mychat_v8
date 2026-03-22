@@ -1,12 +1,9 @@
 'use strict';
 
-// ════════════════════════════════════════════
-// UI UTILITIES
-// ════════════════════════════════════════════
-
-// ── Toast system ─────────────────────────────────────────────────
-let _toastQueue    = [];
-let _toastRunning  = false;
+let _toastQueue = [];
+let _toastRunning = false;
+let _audioCtx = null;
+let soundMuted = false;
 
 function showToast(message, type = 'info') {
   _toastQueue.push({ message, type });
@@ -14,12 +11,18 @@ function showToast(message, type = 'info') {
 }
 
 function _processToast() {
-  if (!_toastQueue.length) { _toastRunning = false; return; }
+  if (!_toastQueue.length) {
+    _toastRunning = false;
+    return;
+  }
   _toastRunning = true;
-  const { message, type } = _toastQueue.shift();
 
+  const { message, type } = _toastQueue.shift();
   const container = document.getElementById('toast-container');
-  if (!container) { _toastRunning = false; return; }
+  if (!container) {
+    _toastRunning = false;
+    return;
+  }
 
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -32,11 +35,13 @@ function _processToast() {
 
   setTimeout(() => {
     el.classList.remove('toast-show');
-    setTimeout(() => { el.remove(); _processToast(); }, 350);
+    setTimeout(() => {
+      el.remove();
+      _processToast();
+    }, 350);
   }, 3000);
 }
 
-// ── Modal helpers ─────────────────────────────────────────────────
 function showModal(id) {
   const el = document.getElementById(id);
   if (el) el.classList.add('modal-visible');
@@ -50,37 +55,46 @@ function hideModal(id) {
 function showJoinRequestModal(username, onAccept, onReject) {
   const nameEl = document.getElementById('join-request-name');
   if (nameEl) nameEl.textContent = username;
-  
+
   const acceptBtn = document.getElementById('accept-join-btn');
   const rejectBtn = document.getElementById('reject-join-btn');
-  
-  const finish = (choice) => {
+
+  const finish = accepted => {
     hideModal('join-request-modal');
-    if (choice) onAccept();
+    if (accepted) onAccept();
     else onReject();
   };
 
   if (acceptBtn) acceptBtn.onclick = () => finish(true);
   if (rejectBtn) rejectBtn.onclick = () => finish(false);
-  
   showModal('join-request-modal');
 }
 
-// Close modals on backdrop click
-document.addEventListener('click', e => {
-  if (e.target.classList.contains('modal-backdrop')) {
-    e.target.classList.remove('modal-visible');
+document.addEventListener('click', event => {
+  if (event.target.classList.contains('modal-backdrop')) {
+    event.target.classList.remove('modal-visible');
   }
 });
 
-// ── Navigation ────────────────────────────────────────────────────
 function navigateHome() {
   const hasSession = typeof getUserSession === 'function' && !!getUserSession();
   window.location.href = hasSession ? 'chat.html' : 'index.html';
 }
 
-function navigateToChat(roomId, type, username, role, key) {
-  const p = new URLSearchParams({ roomId, type, username, role });
+function navigateToChat(roomId, type, username, role, key, extraParams = {}) {
+  const p = new URLSearchParams();
+  if (roomId) p.set('roomId', roomId);
+  if (type) p.set('type', type);
+  if (username) p.set('username', username);
+  if (role) p.set('role', role);
+
+  if (extraParams && typeof extraParams === 'object') {
+    Object.entries(extraParams).forEach(([paramKey, paramValue]) => {
+      if (paramValue === undefined || paramValue === null || paramValue === '') return;
+      p.set(paramKey, String(paramValue));
+    });
+  }
+
   let url = `chat.html?${p.toString()}`;
   if (key) url += `#${key}`;
   window.location.href = url;
@@ -88,37 +102,44 @@ function navigateToChat(roomId, type, username, role, key) {
 
 function getChatParams() {
   const p = new URLSearchParams(window.location.search);
-  return {
-    roomId:   p.get('roomId'),
-    type:     p.get('type'),
+  const params = {
+    roomId: p.get('roomId'),
+    type: p.get('type'),
     username: p.get('username'),
-    role:     p.get('role'),
-    key:      window.location.hash.slice(1)
+    role: p.get('role'),
+    peer: p.get('peer'),
+    key: window.location.hash.slice(1)
   };
+
+  p.forEach((value, key) => {
+    if (params[key] !== undefined) return;
+    params[key] = value;
+  });
+  return params;
 }
 
-// ── Copy to clipboard ─────────────────────────────────────────────
 async function copyToClipboard(text, btnEl) {
   try {
     await navigator.clipboard.writeText(text);
     showToast('Copied!', 'success');
     if (btnEl) {
-      const orig = btnEl.textContent;
-      btnEl.textContent = '✓ Copied';
+      const originalText = btnEl.textContent;
+      btnEl.textContent = 'Copied';
       btnEl.classList.add('copied');
-      setTimeout(() => { btnEl.textContent = orig; btnEl.classList.remove('copied'); }, 2000);
+      setTimeout(() => {
+        btnEl.textContent = originalText;
+        btnEl.classList.remove('copied');
+      }, 2000);
     }
-  } catch (e) {
-    showToast('Copy failed — select and copy manually', 'error');
+  } catch (error) {
+    showToast('Copy failed. Select and copy manually.', 'error');
   }
 }
 
-// ── Wipe screen ───────────────────────────────────────────────────
 function showWipeScreen() {
   document.getElementById('wipe-screen')?.classList.add('wipe-visible');
 }
 
-// ── Cold start banner ─────────────────────────────────────────────
 function showColdStartBanner() {
   document.getElementById('cold-start-banner')?.classList.add('banner-visible');
 }
@@ -127,58 +148,50 @@ function hideColdStartBanner() {
   document.getElementById('cold-start-banner')?.classList.remove('banner-visible');
 }
 
-// ── Network watcher ───────────────────────────────────────────────
 function initNetworkWatcher() {
   const banner = document.getElementById('network-banner');
-  function update() {
+  const update = () => {
     if (banner) banner.style.display = navigator.onLine ? 'none' : 'block';
-  }
-  window.addEventListener('online',  update);
+  };
+  window.addEventListener('online', update);
   window.addEventListener('offline', update);
   update();
 }
 
-// ── Cold start flow ───────────────────────────────────────────────
 async function initWithColdStartHandling() {
   const ready = await checkBackendHealth();
-  if (!ready) {
-    // We won't show the annoying banner automatically anymore.
-    // The backend functions like 'checkRoomAvailability' will naturally handle the wait.
-    // showColdStartBanner();
-    await waitForBackend();
-    // hideColdStartBanner();
-  }
+  if (!ready) await waitForBackend();
 }
 
 async function checkBackendHealth() {
   try {
     const res = await Promise.race([
       fetch(CONFIG.API_BASE + '/health'),
-      new Promise((_, r) => setTimeout(() => r(new Error('timeout')), CONFIG.HEALTH_TIMEOUT_MS))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), CONFIG.HEALTH_TIMEOUT_MS))
     ]);
     return res.ok;
-  } catch (e) { return false; }
+  } catch (error) {
+    return false;
+  }
 }
 
 async function waitForBackend() {
   while (true) {
-    await new Promise(r => setTimeout(r, CONFIG.HEALTH_POLL_MS));
+    await new Promise(resolve => setTimeout(resolve, CONFIG.HEALTH_POLL_MS));
     try {
       const res = await fetch(CONFIG.API_BASE + '/health');
       if (res.ok) return;
-    } catch (e) {}
+    } catch (error) {
+    }
   }
 }
-
-// ── Sound ─────────────────────────────────────────────────────────
-let _audioCtx  = null;
-let soundMuted = false;
 
 function getAudioContext() {
   if (!_audioCtx) {
     try {
       _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {}
+    } catch (error) {
+    }
   }
   return _audioCtx;
 }
@@ -188,78 +201,81 @@ function playMessageSound() {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type            = 'sine';
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.08, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-    o.start(); o.stop(ctx.currentTime + 0.12);
-  } catch (e) {}
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.12);
+  } catch (error) {
+  }
 }
 
 function toggleSound(btnEl) {
   soundMuted = !soundMuted;
-  if (btnEl) btnEl.textContent = soundMuted ? '🔇' : '🔔';
+  if (btnEl) btnEl.textContent = soundMuted ? 'Mute' : 'Sound';
   showToast(soundMuted ? 'Sound muted' : 'Sound on', 'info');
 }
 
-// ── Chat room UI helpers ───────────────────────────────────────────
 function updateConnectionUI(state) {
   const statusEl = document.getElementById('connection-status');
   if (!statusEl) return;
-  if (state === 'hosting')   statusEl.textContent = '● Hosting';
-  if (state === 'connected') statusEl.textContent = '● Connected';
+  if (state === 'hosting') statusEl.textContent = 'Hosting';
+  if (state === 'connected') statusEl.textContent = 'Connected';
 }
 
 function updateOnlineCount(n) {
   const el = document.getElementById('online-count');
   if (!el) return;
   const count = n !== undefined ? n : connectedPeers.size + 1;
-  el.textContent = `● ${count} online`;
+  el.innerHTML = `<span class="dot dot-green"></span> ${count} online`;
 }
 
 function updateHostUI() {
-  document.querySelectorAll('.host-only').forEach(el => el.style.display = '');
+  document.querySelectorAll('.host-only').forEach(el => {
+    el.style.display = '';
+  });
   document.getElementById('host-badge')?.style.setProperty('display', 'flex');
-  document.querySelector('.room-type-badge');
 }
 
 function updateGuestUI() {
-  document.querySelectorAll('.host-only').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.host-only').forEach(el => {
+    el.style.display = 'none';
+  });
 }
 
 function updateMuteUI(muted) {
   const btn = document.getElementById('mute-btn');
-  if (btn) btn.textContent = muted ? '🔇' : '🎙';
+  if (btn) btn.textContent = muted ? 'Muted' : 'Mute';
 }
 
-// ── User panel management ─────────────────────────────────────────
 function addUserToPanel(peerId, username, role) {
   const list = document.getElementById('user-list');
   if (!list) return;
 
-  // Remove existing entry for this peer
   document.getElementById('user-' + CSS.escape(peerId))?.remove();
 
   const row = document.createElement('div');
-  row.className   = 'user-row';
-  row.id          = 'user-' + peerId;
+  row.className = 'user-row';
+  row.id = 'user-' + peerId;
 
   const initials = username.slice(0, 2).toUpperCase();
-  const isHost   = role === 'host';
+  const isHost = role === 'host';
 
   row.innerHTML = `
     <div class="user-avatar">${initials}</div>
     <div class="user-info">
       <div class="user-name">${escHtml(username)}</div>
-      <div class="user-role ${isHost ? 'host' : ''}">${isHost ? '👑 Host' : 'Member'}</div>
+      <div class="user-role ${isHost ? 'host' : ''}">${isHost ? 'Host' : 'Member'}</div>
     </div>
     <div class="dot dot-green" id="ping-${CSS.escape(peerId)}"></div>
-    ${myRole === 'host' && peerId !== peerInstance?.id ? `
-    <button class="user-menu-btn" onclick="toggleUserMenu('${peerId}','${escHtml(username)}',this)">···</button>
-    ` : ''}
+    ${myRole === 'host' && peerId !== peerInstance?.id
+      ? `<button class="user-menu-btn" onclick="toggleUserMenu('${peerId}','${escHtml(username)}',this)">...</button>`
+      : ''}
   `;
   list.appendChild(row);
 }
@@ -269,20 +285,21 @@ function removeUserFromPanel(peerId) {
 }
 
 function toggleUserMenu(peerId, username, btnEl) {
-  // Remove any open dropdown
-  document.querySelectorAll('.user-menu-dropdown').forEach(d => d.remove());
+  document.querySelectorAll('.user-menu-dropdown').forEach(dropdown => dropdown.remove());
 
   const menu = document.createElement('div');
   menu.className = 'user-menu-dropdown';
   menu.innerHTML = `
-    <button onclick="muteUser('${peerId}')">🔇 Mute</button>
-    <button onclick="kickUser('${peerId}')">👢 Kick</button>
-    <button onclick="promoteUser('${peerId}')">⬆ Promote to Host</button>
+    <button onclick="muteUser('${peerId}')">Mute</button>
+    <button onclick="kickUser('${peerId}')">Kick</button>
+    <button onclick="promoteUser('${peerId}')">Promote to Host</button>
   `;
+
   btnEl.parentElement.style.position = 'relative';
   btnEl.parentElement.appendChild(menu);
-
-  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 0);
 }
 
 function refreshUserPingDot(peerId, pingMs) {
@@ -291,7 +308,6 @@ function refreshUserPingDot(peerId, pingMs) {
   dot.className = 'dot ' + (pingMs < 150 ? 'dot-green' : pingMs < 400 ? 'dot-amber' : 'dot-red');
 }
 
-// ── Active call UI ────────────────────────────────────────────────
 function showActiveCallUI() {
   document.getElementById('call-bar')?.classList.add('call-active');
 }
@@ -301,11 +317,10 @@ function hideActiveCallUI() {
 }
 
 function showIncomingCallUI(callerPeerId, callback) {
-  const modal = document.getElementById('incoming-call-modal');
   const nameEl = document.getElementById('caller-name');
   if (nameEl) {
-    const p = connectedPeers.get(callerPeerId);
-    nameEl.textContent = p ? p.username : 'Unknown';
+    const peer = connectedPeers.get(callerPeerId);
+    nameEl.textContent = peer ? peer.username : 'Unknown';
   }
   showModal('incoming-call-modal');
 
@@ -313,6 +328,7 @@ function showIncomingCallUI(callerPeerId, callback) {
     hideModal('incoming-call-modal');
     callback(true);
   }, { once: true });
+
   document.getElementById('decline-call-btn')?.addEventListener('click', () => {
     hideModal('incoming-call-modal');
     callback(false);
