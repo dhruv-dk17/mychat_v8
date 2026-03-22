@@ -1,14 +1,212 @@
-/* ══════════════════════════════════════════════
-   CHAT ROOM PAGE — chat.html
-   Instagram DM aesthetic, premium dark
-   ══════════════════════════════════════════════ */
-
 body[data-page="chat"] {
-  display: flex;
-  flex-direction: column;
+  margin: 0;
+  padding: 0;
   min-height: 100dvh;
   height: 100dvh;
   overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-layout {
+  display: flex;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* ── Column 1: Nav ───────────────────────────── */
+.app-nav {
+  width: 60px;
+  background: #0D0D12;
+  border-right: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0;
+  gap: 1rem;
+  z-index: 50;
+  flex-shrink: 0;
+}
+.nav-brand {
+  font-family: var(--ff-head);
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--accent-bright);
+  margin-bottom: 0.5rem;
+}
+.nav-item {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 1.3rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.nav-item:hover, .nav-item.active {
+  color: var(--accent-bright);
+  background: rgba(139, 92, 246, 0.1);
+}
+.nav-item.danger:hover {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.1);
+}
+.nav-spacer { flex: 1; }
+.nav-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--grad-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--ff-head);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+/* ── Column 2: Chat List ─────────────────────── */
+.chat-list-column {
+  width: 300px;
+  background: var(--surface);
+  border-right: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 40;
+}
+.chat-list-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-dim);
+}
+.search-box {
+  background: var(--surface2);
+  border-radius: 20px;
+  padding: 0.4rem 0.8rem;
+  display: flex;
+  align-items: center;
+}
+.search-box input {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+  font-size: 0.85rem;
+}
+.chat-list-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.chat-list-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--border-dim);
+}
+.chat-list-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  gap: 0.75rem;
+}
+.chat-list-item:hover { background: var(--surface2); }
+.chat-list-item.active { background: rgba(139, 92, 246, 0.15); }
+.chat-list-item-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.chat-list-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.chat-list-item-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-list-item-desc {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.15rem;
+}
+
+/* ── Column 3: Chat Window ───────────────────── */
+.chat-window-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg);
+  min-width: 0;
+}
+.chat-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-faint);
+  gap: 1rem;
+}
+.placeholder-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+}
+.placeholder-text {
+  font-size: 0.9rem;
+  font-family: var(--ff-head);
+  letter-spacing: 0.5px;
+}
+
+/* ── Mobile Breakpoints ──────────────────────── */
+@media (max-width: 768px) {
+  .app-nav { display: none; }
+  .chat-list-column {
+    width: 100%;
+  }
+  .chat-window-column {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+  }
+  .chat-window-column.active {
+    display: flex;
+  }
+  /* On mobile, if chat is open, the chat list is implicitly hidden because chat window is absolute and inset 0 */
+  #back-btn {
+    display: flex !important; /* show back button on mobile chat view */
+  }
+}
+@media (min-width: 769px) {
+  #back-btn { display: none !important; } /* hide back button on desktop */
 }
 
 /* ── Top Bar ─────────────────────────────────── */

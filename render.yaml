@@ -1,7 +1,7 @@
 services:
 
   - type: web
-    name: mychat-v7-frontend
+    name: mychat-v8-frontend
     runtime: static
     staticPublishPath: ./frontend
     pullRequestPreviewsEnabled: false
@@ -30,7 +30,7 @@ services:
         destination: /index.html
 
   - type: web
-    name: mychat-v7-backend
+    name: mychat-v8-backend
     runtime: node
     rootDir: backend
     buildCommand: npm install
@@ -47,16 +47,16 @@ services:
         value: true
       - key: ALLOWED_ORIGIN
         fromService:
-          name: mychat-v7-frontend
+          name: mychat-v8-frontend
           type: web
           property: host
       - key: DATABASE_URL
         fromDatabase:
-          name: mychat-v7-db
+          name: mychat-v8-db
           property: connectionString
 
 databases:
-  - name: mychat-v7-db
+  - name: mychat-v8-db
     plan: free
     databaseName: mychat
     user: mychat_user

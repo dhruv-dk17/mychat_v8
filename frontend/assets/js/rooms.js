@@ -2,11 +2,10 @@
 
 // ── User Auth API ───────────────────────────────────────────────────
 async function registerUser(username, password) {
-  const passwordHash = await sha256(password);
   const res = await fetch(`${CONFIG.API_BASE}/users/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, passwordHash })
+    body: JSON.stringify({ username, password })
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Registration failed');
@@ -14,11 +13,10 @@ async function registerUser(username, password) {
 }
 
 async function loginUser(username, password) {
-  const passwordHash = await sha256(password);
   const res = await fetch(`${CONFIG.API_BASE}/users/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, passwordHash })
+    body: JSON.stringify({ username, password })
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Login failed');
@@ -34,16 +32,10 @@ async function checkRoomAvailability(slug) {
 
 // ── Register permanent room ───────────────────────────────────────
 async function registerPermanentRoom(slug, password) {
-  const passwordHash   = await sha256(password);
-  const ownerToken     = randomToken(32);
-  const ownerTokenHash = await sha256(ownerToken);
-
-  const payload = { slug, passwordHash, ownerTokenHash };
   const u = getUserSession();
-  if (u) {
-    payload.username = u.username;
-    payload.token    = u.token;
-  }
+  if (!u) throw new Error('Must be logged in to create permanent rooms');
+
+  const payload = { slug, password, username: u.username, token: u.token };
 
   const res = await fetch(`${CONFIG.API_BASE}/rooms/register`, {
     method:  'POST',
@@ -53,30 +45,15 @@ async function registerPermanentRoom(slug, password) {
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Registration failed');
 
-  // Store raw owner token in sessionStorage only — cleared on tab close
-  sessionStorage.setItem('ownerToken_' + slug, ownerToken);
-  return { slug, ownerToken };
+  return { slug };
 }
 
 // ── Verify room password ──────────────────────────────────────────
 async function verifyRoomPassword(slug, password) {
-  const passwordHash = await sha256(password);
   const res  = await fetch(`${CONFIG.API_BASE}/rooms/verify-password`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ slug, passwordHash })
-  });
-  const data = await res.json();
-  return data.valid === true;
-}
-
-// ── Verify owner token ────────────────────────────────────────────
-async function verifyOwnerToken(slug, ownerToken) {
-  const ownerTokenHash = await sha256(ownerToken);
-  const res  = await fetch(`${CONFIG.API_BASE}/rooms/verify-owner`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ slug, ownerTokenHash })
+    body:    JSON.stringify({ slug, password })
   });
   const data = await res.json();
   return data.valid === true;
@@ -85,15 +62,15 @@ async function verifyOwnerToken(slug, ownerToken) {
 // ── PeerJS ID helpers ─────────────────────────────────────────────
 function hostPeerId(roomId, isPermanent) {
   return isPermanent
-    ? `mchat-perm-${roomId}-host`
-    : `mchat-${roomId}-host`;
+    ? `mychat8-perm-${roomId}-host`
+    : `mychat8-${roomId}-host`;
 }
 
 function guestPeerId(roomId, isPermanent) {
   const rand = randomToken(2);
   return isPermanent
-    ? `mchat-perm-${roomId}-${rand}`
-    : `mchat-${roomId}-${rand}`;
+    ? `mychat8-perm-${roomId}-${rand}`
+    : `mychat8-${roomId}-${rand}`;
 }
 
 // ── Create temporary room ─────────────────────────────────────────
@@ -148,51 +125,55 @@ async function deleteUserRoom(slug) {
 }
 
 async function resolvePermanentRoomRole(slug, preferredRole = 'guest') {
-  const ownerToken = sessionStorage.getItem('ownerToken_' + slug);
-  if (!ownerToken) return preferredRole;
   try {
-    const isOwner = await verifyOwnerToken(slug, ownerToken);
+    const rooms = await fetchUserRooms();
+    const isOwner = rooms.some(r => r.slug === slug);
     return isOwner ? 'host' : preferredRole;
   } catch (e) {
     return preferredRole;
   }
 }
 
-function buildPermanentEventId(event) {
-  if (event?.id) return event.id;
-  if (event?.type === 'delete_msg' && event.messageId) return `delete:${event.messageId}`;
-  if (event?.type === 'clear_chat') return `clear:${event.ts || Date.now()}`;
-  return '';
-}
+// ── Dead Drop Offline Messaging ───────────────────────────────────
+async function sendDeadDropMessage(receiverUsername, messagePayload) {
+  const u = getUserSession();
+  if (!u) throw new Error('Must be logged in to send offline messages');
 
-async function fetchPermanentRoomEvents(slug, password, sinceId = 0) {
-  const passwordHash = await sha256(password);
-  const res = await fetch(`${CONFIG.API_BASE}/rooms/${encodeURIComponent(slug)}/messages?sinceId=${encodeURIComponent(sinceId)}`, {
-    headers: { 'X-Room-Password-Hash': passwordHash }
+  const res = await fetch(`${CONFIG.API_BASE}/dead-drops`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'username': u.username,
+      'token': u.token
+    },
+    body: JSON.stringify(messagePayload)
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to load room history');
-  return data.events || [];
+  if (!data.success) throw new Error(data.error || 'Failed to send dead drop');
 }
 
-async function persistPermanentRoomEvent(slug, password, event) {
-  const eventId = buildPermanentEventId(event);
-  if (!eventId) return;
+async function fetchPendingDeadDrops() {
+  const u = getUserSession();
+  if (!u) return [];
 
-  const passwordHash = await sha256(password);
-  const ciphertext = await aesEncrypt(password, JSON.stringify(event));
-  const res = await fetch(`${CONFIG.API_BASE}/rooms/${encodeURIComponent(slug)}/messages`, {
+  const res = await fetch(`${CONFIG.API_BASE}/dead-drops`, {
+    headers: {
+      'username': u.username,
+      'token': u.token
+    }
+  });
+  const data = await res.json();
+  return data.drops || [];
+}
+
+async function confirmDeadDropDelivery(dropId) {
+  const u = getUserSession();
+  if (!u) return;
+  await fetch(`${CONFIG.API_BASE}/dead-drops/${dropId}/confirm`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'X-Room-Password-Hash': passwordHash
-    },
-    body: JSON.stringify({
-      eventId,
-      ciphertext,
-      createdAt: event.ts || Date.now()
-    })
+      'username': u.username,
+      'token': u.token
+    }
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save room history');
 }

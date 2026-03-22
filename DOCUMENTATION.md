@@ -1,8 +1,8 @@
-# Mychat v7 — Full Documentation
+# Mychat v8 — Full Documentation
 
 ## Overview
 
-Mychat v7 is a privacy-first, real-time P2P communication web app. All chat is peer-to-peer via WebRTC DataChannels — **no messages ever touch the server**. The backend only stores permanent room registrations (slug + hashed password + hashed owner token).
+Mychat v8 is a privacy-first, real-time P2P communication web app. All chat is peer-to-peer via WebRTC DataChannels — **no messages ever touch the server**. The backend only stores permanent room registrations (slug + hashed password + hashed owner token).
 
 ---
 
@@ -23,7 +23,7 @@ All voice: WebRTC SRTP (encrypted by spec)
 ## File Structure
 
 ```
-mychat_v7/
+mychat_v8/
 ├── frontend/
 │   ├── index.html              # Home page
 │   ├── chat.html               # Chat room page

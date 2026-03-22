@@ -4,220 +4,201 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mychat — Private · Encrypted · Zero Trace</title>
-  <meta name="description" content="Mychat v7 — End-to-end encrypted P2P messaging. No servers. No logs. Total privacy." />
+  <meta name="description" content="Mychat v8 — End-to-end encrypted P2P messaging. No servers. No logs. Total privacy." />
   <meta name="theme-color" content="#080810" />
 
-  <!-- Fonts CDN -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-  <!-- CSS -->
   <link rel="stylesheet" href="assets/css/main.css?v=20260321e" />
   <link rel="stylesheet" href="assets/css/home.css?v=20260321e" />
   <link rel="stylesheet" href="assets/css/anti-surveillance.css?v=20260321e" />
+  
+  <style>
+    /* Marketing Landing Page Overrides */
+    body[data-page="home"] { overflow-y: auto; display:block; }
+    .hero-section {
+      text-align: center; padding: 6rem 1rem 4rem; position: relative; max-width: 900px; margin: 0 auto;
+    }
+    .hero-logo {
+      font-size: 4rem; margin-bottom: 1rem; animation: float 6s ease-in-out infinite;
+      text-shadow: 0 0 40px rgba(139, 92, 246, 0.6);
+    }
+    .hero-title {
+      font-size: 3.5rem; font-family: var(--ff-head); font-weight: 700;
+      background: linear-gradient(135deg, #fff, #A78BFA); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 1rem; line-height: 1.1; letter-spacing: -1px;
+    }
+    .hero-subtitle {
+      font-size: 1.15rem; color: var(--text-dim); max-width: 600px; margin: 0 auto 2.5rem; line-height: 1.6;
+    }
+    .cta-group {
+      display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 4rem;
+    }
+    .btn-hero {
+      padding: 0.85rem 2rem; font-size: 1rem; font-weight: 600; border-radius: var(--r-pill);
+      transition: all 0.2s var(--ease-out); text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn-hero-primary {
+      background: var(--grad-accent); color: #fff; box-shadow: var(--glow-accent);
+    }
+    .btn-hero-primary:hover {
+      box-shadow: var(--glow-accent-lg); transform: translateY(-2px);
+    }
+    .btn-hero-secondary {
+      background: transparent; border: 1px solid var(--border-dim); color: var(--text);
+    }
+    .btn-hero-secondary:hover {
+      background: rgba(255,255,255,0.05); transform: translateY(-2px);
+    }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; padding: 0 1.5rem 6rem; max-width: 1200px; margin: 0 auto;
+    }
+    .feature-card {
+      background: var(--surface); border: 1px solid var(--border-dim); border-radius: 20px; padding: 2rem;
+      transition: all 0.3s;
+    }
+    .feature-card:hover {
+      border-color: rgba(139, 92, 246, 0.4); transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .feat-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+    .feat-title { font-size: 1.25rem; font-family: var(--ff-head); font-weight: 600; margin-bottom: 0.75rem; color: var(--text-white); }
+    .feat-desc { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+  </style>
 </head>
 <body data-page="home">
 
-  <!-- System overlays -->
-  <div id="network-banner">⚠ No internet connection</div>
-  <div id="cold-start-banner" aria-live="polite">
-    <span class="cold-start-text">⏳ Server waking up — please wait (~30s)</span>
-    <div class="cold-start-bar"></div>
-  </div>
   <div id="toast-container"></div>
 
-  <!-- Optional wipe screen (triggered by surveillance) -->
-  <div id="wipe-screen">
-    <div class="wipe-icon">🔒</div>
-    <div class="wipe-title">SESSION WIPED</div>
-    <div class="wipe-sub">All data cleared. Redirecting...</div>
-  </div>
-
-  <!-- HOME CONTENT -->
-  <main class="home-wrapper">
-
-    <!-- Header -->
-    <div class="home-header">
-      <div class="home-brand">
-        <div class="home-logo">🔒</div>
-        <div>
-          <div class="home-title">Mychat</div>
-          <div class="home-tagline">Private · Encrypted · Zero Trace</div>
-        </div>
+  <main>
+    <div class="hero-section">
+      <div class="hero-logo">🛡️</div>
+      <h1 class="hero-title">Secure Enterprise Messaging.</h1>
+      <p class="hero-subtitle">Mychat v8 delivers uncompromising privacy through peer-to-peer data transmission, end-to-end encryption, and offline dead drops. Zero logs. Zero compromise.</p>
+      
+      <div class="cta-group">
+        <button class="btn btn-hero btn-hero-primary" onclick="showModal('auth-modal'); document.getElementById('auth-username').focus();">Sign In to Dashboard</button>
+        <button class="btn btn-hero btn-hero-secondary" onclick="showModal('auth-modal');">Create Account</button>
       </div>
-      <div class="home-header-right" style="display:flex; gap:0.5rem; align-items:center;">
-        <button id="show-auth-btn" class="btn btn-ghost" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Sign In</button>
-        <div id="user-profile-dropdown" style="display:none; color:var(--text); font-weight:600; font-size:0.85rem; cursor:pointer;"></div>
-        <span class="badge badge-green">
-          <span class="dot dot-green"></span> P2P
-        </span>
-        <span class="version-pill">v7</span>
+
+      <div style="font-family:var(--ff-mono); font-size:0.8rem; color:var(--text-faint); margin-top:2rem; padding:0.5rem 1rem; background:rgba(255,255,255,0.03); border-radius:30px; display:inline-flex; border:1px solid rgba(255,255,255,0.05);">
+        <span style="color:var(--accent-green); margin-right:0.5rem;">●</span> P2P Architecture Active
       </div>
     </div>
 
-    <!-- Card 1: Private Room -->
-    <div class="room-card">
-      <div class="card-label">🔒 Private Room</div>
-      <div class="card-desc">Direct P2P connection. End-to-end encrypted. 2 people max.</div>
-      <button class="btn btn-primary w-100" id="create-private-btn" style="margin-bottom:1rem">
-        ◉ Create Private Room
-      </button>
-      <div class="divider">or join</div>
-      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem">
-        <input type="text" class="input-field" id="join-room-id" placeholder="Room ID" autocomplete="off" spellcheck="false" />
-        <input type="text" class="input-field" id="join-username" placeholder="Your name" autocomplete="off" maxlength="20" />
-        <button class="btn btn-ghost w-100" id="join-private-btn">→ Join Room</button>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feat-icon">🌐</div>
+        <div class="feat-title">True Peer-to-Peer</div>
+        <div class="feat-desc">Messages travel directly from device to device. Our servers never touch or store your live conversations. Lowest latency guaranteed.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔒</div>
+        <div class="feat-title">Dead Drop Encryption</div>
+        <div class="feat-desc">Sending a message to an offline contact? It’s completely encrypted offline, stored as an unreadable blob on the server, and decrypted solely by the recipient.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">👑</div>
+        <div class="feat-title">Host Migration</div>
+        <div class="feat-desc">Group chats survive if the original host leaves. The network automatically promotes another member to Host without dropping messages.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">👥</div>
+        <div class="feat-title">3-Column Layout</div>
+        <div class="feat-desc">Experience our newly polished desktop client with seamless navigation between contacts, active chats, and group settings.</div>
       </div>
     </div>
-
-    <!-- Card 2: Group Room -->
-    <div class="room-card">
-      <div class="card-label">👥 Group Room</div>
-      <div class="card-desc">Star topology. Host relays messages. Up to 50 participants.</div>
-      <button class="btn btn-primary w-100" id="create-group-btn" style="margin-bottom:1rem">
-        ◎ Create Group Room
-      </button>
-      <div class="divider">or join</div>
-      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem">
-        <input type="text" class="input-field" id="join-group-id"       placeholder="Group Room ID" autocomplete="off" />
-        <input type="text" class="input-field" id="join-group-username" placeholder="Your name" autocomplete="off" maxlength="20" />
-        <button class="btn btn-ghost w-100" id="join-group-btn">→ Join Group</button>
-      </div>
-    </div>
-
-    <!-- Card 3: Permanent Room -->
-    <div class="room-card room-card-perm">
-      <div class="card-label">⚡ Permanent Room</div>
-      <div class="card-desc">Register a custom Room ID that's yours forever. Password protected. Stored on server.</div>
-
-      <!-- Logged out view -->
-      <div id="perm-logged-out-view">
-        <center style="margin: 1.5rem 0;">
-          <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem;">Sign in to create & manage your permanent rooms.</p>
-          <button class="btn btn-primary w-100" onclick="showModal('auth-modal')">Sign in / Register</button>
-        </center>
-      </div>
-
-      <!-- Logged in view -->
-      <div id="perm-logged-in-view" style="display:none;">
-        <button class="btn btn-primary w-100" id="open-dashboard-btn" style="margin-top:0.75rem; margin-bottom:1rem">
-          ◎ Open Dashboard
-        </button>
-      </div>
-
-      <div class="divider">or join existing</div>
-
-      <!-- Join sub-section -->
-      <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem">
-        <input type="text" class="input-field" id="join-perm-id" placeholder="Room ID" autocomplete="off" spellcheck="false" maxlength="8" />
-        <div class="input-pw-wrap">
-          <input type="password" class="input-field" id="join-perm-pw" placeholder="Password" autocomplete="current-password" />
-          <button class="pw-toggle" type="button" title="Show/hide password">👁</button>
-        </div>
-        <input type="text" class="input-field" id="join-perm-username" placeholder="Your name" autocomplete="off" maxlength="20" />
-        <div class="inline-error" id="join-perm-error"></div>
-        <button class="btn btn-ghost w-100" id="join-perm-btn">→ Join Room</button>
-      </div>
-    </div>
-
-    <div class="home-footer">Mychat v7 · All data P2P · No server logs · Free forever</div>
   </main>
-
-  <!-- Success Modal (after register) -->
-  <div class="modal-backdrop" id="success-modal">
-    <div class="modal-box">
-      <div class="modal-title">✓ Room Registered!</div>
-      <div class="modal-subtitle">Your permanent room is ready. Save your owner token — it cannot be recovered.</div>
-
-      <div style="margin-bottom:0.75rem">
-        <div class="input-label" style="margin-bottom:0.35rem">Room ID</div>
-        <div class="code-display">
-          <span class="code-display-text" id="success-slug"></span>
-          <button class="copy-btn" id="copy-slug-btn">Copy</button>
-        </div>
-      </div>
-
-      <div style="margin-bottom:0.75rem">
-        <div class="input-label" style="margin-bottom:0.35rem">Owner Token</div>
-        <div class="code-display" style="flex-direction:column;align-items:stretch;gap:0.5rem">
-          <span class="token-display" id="success-token"></span>
-          <button class="copy-btn" id="copy-token-btn">Copy</button>
-        </div>
-      </div>
-
-      <div class="success-warning">
-        ⚠ SAVE YOUR OWNER TOKEN — it cannot be recovered if lost. This token proves you own this room.
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn btn-ghost" onclick="hideModal('success-modal')">Close</button>
-        <button class="btn btn-primary" id="enter-room-btn">Enter Room →</button>
-      </div>
-    </div>
-  </div>
 
   <!-- User Auth Modal -->
   <div class="modal-backdrop" id="auth-modal">
-    <div class="modal-box" style="width: 320px;">
-      <div class="modal-title" style="text-align: center; margin-bottom: 1rem;">Sign In / Register</div>
-      <div style="display:flex;flex-direction:column;gap:0.75rem;">
-        <input type="text" class="input-field" id="auth-username" placeholder="Username (3-32 chars)" autocomplete="off" spellcheck="false" maxlength="32" />
-        <input type="password" class="input-field" id="auth-password" placeholder="Password" />
-        <div class="inline-error" id="auth-error" style="text-align:center;"></div>
-        <button class="btn btn-primary w-100" id="auth-login-btn">Log In</button>
-        <button class="btn btn-ghost w-100" id="auth-register-btn" style="margin-top:-0.25rem;">Create Account</button>
-      </div>
-      <button class="btn btn-ghost" style="position: absolute; top:10px; right:10px; border:none; padding:10px;" onclick="hideModal('auth-modal')">✕</button>
-    </div>
-  </div>
-
-  <!-- Permanent Rooms Dashboard -->
-  <div class="modal-backdrop" id="dashboard-modal">
-    <div class="modal-box" style="width: 440px; max-height: 90vh; overflow-y: auto;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <div class="modal-title">Your Permanent Rooms</div>
-        <button class="btn btn-ghost" style="border:none; padding:10px;" onclick="hideModal('dashboard-modal')">✕</button>
-      </div>
-      
-      <!-- Create Room Form inside Dashboard -->
-      <div class="card-desc" style="margin-bottom:1rem;">Create a new permanent room:</div>
-      <div style="display:flex;flex-direction:column;gap:0.5rem; margin-bottom:1.5rem; padding:1rem; background:rgba(255,255,255,0.03); border-radius:var(--r-md); border:1px solid rgba(255,255,255,0.08);">
-        <input type="text" class="input-field" id="dashboard-new-slug" placeholder="Room ID (3-8 chars, a-z 0-9)" maxlength="8" autocomplete="off" spellcheck="false" />
-        <div class="input-pw-wrap">
-          <input type="password" class="input-field" id="dashboard-new-pw" placeholder="Room Password" />
-          <button class="pw-toggle" type="button" title="Show/hide password">👁</button>
+    <div class="modal-box" style="width: 340px; border-radius: 20px;">
+      <div class="modal-title" style="text-align: center; margin-bottom: 1.5rem; font-size:1.5rem;">Join Mychat v8</div>
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.3rem; display:block;">Username</label>
+          <input type="text" class="input-field" id="auth-username" placeholder="3-32 chars" autocomplete="off" spellcheck="false" maxlength="32" />
         </div>
-        <div class="inline-error" id="dashboard-new-error"></div>
-        <button class="btn btn-primary w-100" id="dashboard-create-btn">◎ Register & Host</button>
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.3rem; display:block;">Password</label>
+          <input type="password" class="input-field" id="auth-password" placeholder="Min 4 chars" />
+        </div>
+        <div class="inline-error" id="auth-error" style="text-align:center;"></div>
+        <button class="btn btn-primary w-100" id="auth-login-btn" style="padding:0.8rem;">Log In to Dashboard</button>
+        <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:0.5rem;">
+          Don't have an account? <a href="#" id="auth-register-trigger" style="color:var(--accent-bright); text-decoration:none;">Register</a>
+        </div>
+        <button class="btn btn-ghost w-100" id="auth-register-btn" style="display:none; padding:0.8rem; color:var(--accent-green); border-color:rgba(16,185,129,0.3);">Create Account & Enter</button>
       </div>
-
-      <div class="card-desc">Your Active Rooms:</div>
-      <div id="dashboard-rooms-list" style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
-        <!-- Injected dynamically -->
-      </div>
+      <button class="btn btn-ghost" style="position: absolute; top:15px; right:15px; border:none; padding:10px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:50%;" onclick="hideModal('auth-modal')">✕</button>
     </div>
   </div>
 
-  <!-- User Settings Modal -->
-  <div class="modal-backdrop" id="user-settings-modal">
-    <div class="modal-box" style="width: 320px;">
-      <div class="modal-title" style="text-align: center; margin-bottom: 1rem;">Account Settings</div>
-      <div style="display:flex;flex-direction:column;gap:0.75rem;">
-        <button class="btn btn-ghost w-100" id="settings-logout-btn">Log Out</button>
-        <button class="btn btn-ghost w-100" id="settings-delete-account-btn" style="color:var(--red);">Delete Account & Rooms</button>
-      </div>
-      <button class="btn btn-ghost" style="position: absolute; top:10px; right:10px; border:none; padding:10px;" onclick="hideModal('user-settings-modal')">✕</button>
-    </div>
-  </div>
-
-  <!-- Scripts (order matters) -->
+  <!-- Scripts -->
   <script src="assets/js/config.js?v=20260321e"></script>
   <script src="assets/js/crypto.js?v=20260321e"></script>
   <script src="assets/js/rooms.js?v=20260321e"></script>
   <script src="assets/js/ui.js?v=20260321e"></script>
-  <script src="assets/js/peer.js?v=20260321e"></script>
-  <script src="assets/js/surveillance.js?v=20260321e"></script>
-  <script src="assets/js/app.js?v=20260321e"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+       const u = getUserSession();
+       if (u) {
+          window.location.href = 'chat.html'; // auto redirect to dashboard if logged in
+       }
+
+       const err = document.getElementById('auth-error');
+       
+       document.getElementById('auth-register-trigger').addEventListener('click', (e) => {
+          e.preventDefault();
+          document.getElementById('auth-login-btn').style.display = 'none';
+          document.getElementById('auth-register-btn').style.display = 'block';
+          e.target.parentElement.innerHTML = 'Account will be created instantly with no email.';
+       });
+
+       document.getElementById('auth-login-btn').addEventListener('click', async () => {
+          const userExp = document.getElementById('auth-username').value.trim();
+          const passExp = document.getElementById('auth-password').value;
+          if (!userExp || !passExp) { err.textContent = 'Fill all fields'; err.classList.add('visible'); return; }
+          try {
+             document.getElementById('auth-login-btn').textContent = 'Loading...';
+             document.getElementById('auth-login-btn').disabled = true;
+             const res = await loginUser(userExp, passExp);
+             setUserSession(res.username, res.token);
+             window.location.href = 'chat.html';
+          } catch(e) {
+             err.textContent = e.message; err.classList.add('visible');
+             document.getElementById('auth-login-btn').textContent = 'Log In to Dashboard';
+             document.getElementById('auth-login-btn').disabled = false;
+          }
+       });
+
+       document.getElementById('auth-register-btn').addEventListener('click', async () => {
+          const userExp = document.getElementById('auth-username').value.trim();
+          const passExp = document.getElementById('auth-password').value;
+          if (!userExp || !passExp) { err.textContent = 'Fill all fields'; err.classList.add('visible'); return; }
+          try {
+             document.getElementById('auth-register-btn').textContent = 'Loading...';
+             document.getElementById('auth-register-btn').disabled = true;
+             const res = await registerUser(userExp, passExp);
+             setUserSession(res.username, res.token);
+             if (res.recoveryKey) {
+                alert('CRITICAL: Your Recovery Key is: ' + res.recoveryKey + '\n\nSave this NOW. It cannot be recovered later.');
+             }
+             window.location.href = 'chat.html';
+          } catch(e) {
+             err.textContent = e.message; err.classList.add('visible');
+             document.getElementById('auth-register-btn').textContent = 'Create Account & Enter';
+             document.getElementById('auth-register-btn').disabled = false;
+          }
+       });
+    });
+  </script>
 </body>
 </html>

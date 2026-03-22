@@ -114,7 +114,7 @@ if (navigator.mediaDevices?.getDisplayMedia) {
   const original = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
   navigator.mediaDevices.getDisplayMedia = async function (opts) {
     onScreenshotAttemptDetected();
-    throw new DOMException('Screen capture blocked by Mychat v7', 'NotAllowedError');
+    throw new DOMException('Screen capture blocked by Mychat v8', 'NotAllowedError');
   };
 }
 
@@ -152,7 +152,7 @@ function initChatProtection(el) {
 window.addEventListener('beforeprint', e => {
   e.preventDefault();
   activateBlurShield('Print attempt blocked');
-  showToast('Printing is disabled in Mychat v7', 'danger');
+  showToast('Printing is disabled in Mychat v8', 'danger');
 });
 
 // ════════════════════════════════════════════

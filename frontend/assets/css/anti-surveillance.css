@@ -139,7 +139,7 @@
 @media print {
   body * { display: none !important; }
   body::after {
-    content: "🔒 This content is protected by Mychat v7 — printing is not allowed.";
+    content: "🔒 This content is protected by Mychat v8 — printing is not allowed.";
     display: block !important;
     text-align: center;
     margin-top: 120px;

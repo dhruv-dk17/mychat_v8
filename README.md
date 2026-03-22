@@ -1,4 +1,4 @@
-# Mychat v7
+# Mychat v8
 
 Privacy-first, zero-trace, real-time P2P communication. Built on WebRTC via PeerJS — messages never touch a server.
 
@@ -41,7 +41,7 @@ npm run dev    # uses nodemon
 3. Dashboard → **New → Blueprint** → Connect your repo
 4. Render reads `render.yaml` → creates 3 services automatically
 5. Wait ~3 minutes for deploy
-6. Copy backend URL (e.g. `https://mychat-v7-backend.onrender.com`)
+6. Copy backend URL (e.g. `https://mychat-v8-backend.onrender.com`)
 7. Update `API_BASE` in `frontend/assets/js/config.js`
 8. Push change → frontend auto-redeploys in ~30s
 

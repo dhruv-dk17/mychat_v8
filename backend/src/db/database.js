@@ -13,52 +13,45 @@ async function initDB() {
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
-        username      VARCHAR(32) PRIMARY KEY,
-        password_hash CHAR(64)    NOT NULL,
-        token         VARCHAR(128),
-        created_at    BIGINT      NOT NULL
+        id               SERIAL PRIMARY KEY,
+        username         VARCHAR(32) UNIQUE NOT NULL,
+        password_hash    TEXT NOT NULL,
+        recovery_key_hash TEXT NOT NULL,
+        public_identity_key TEXT,
+        session_token    VARCHAR(128),
+        contacts         JSONB DEFAULT '[]'::jsonb,
+        last_active      TIMESTAMP DEFAULT NOW(),
+        created_at       TIMESTAMP DEFAULT NOW()
       )
     `);
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS rooms (
-        slug             VARCHAR(8) PRIMARY KEY,
-        password_hash    CHAR(64)   NOT NULL,
-        owner_token_hash CHAR(64)   NOT NULL,
-        owner_username   VARCHAR(32) REFERENCES users(username) ON DELETE CASCADE,
-        created_at       BIGINT     NOT NULL
+        room_id      SERIAL PRIMARY KEY,
+        room_name    VARCHAR(64) UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        owner_username VARCHAR(32) REFERENCES users(username) ON DELETE CASCADE,
+        expires_at   TIMESTAMP,
+        created_at   TIMESTAMP DEFAULT NOW()
       )
     `);
-    
-    // Check if owner_username exists (for migration)
-    const colCheck = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name='rooms' AND column_name='owner_username'
-    `);
-    if (colCheck.rows.length === 0) {
-      await client.query(`ALTER TABLE rooms ADD COLUMN owner_username VARCHAR(32) REFERENCES users(username) ON DELETE CASCADE`);
-    }
 
     await client.query(`
-      CREATE TABLE IF NOT EXISTS room_messages (
-        id         BIGSERIAL PRIMARY KEY,
-        room_slug  VARCHAR(8)    NOT NULL REFERENCES rooms(slug) ON DELETE CASCADE,
-        event_id   VARCHAR(128)  NOT NULL,
-        ciphertext TEXT          NOT NULL,
-        created_at BIGINT        NOT NULL
+      CREATE TABLE IF NOT EXISTS dead_drops (
+        id                SERIAL PRIMARY KEY,
+        receiver_username VARCHAR(32) NOT NULL,
+        encrypted_payload TEXT NOT NULL,
+        sender_public_key TEXT NOT NULL,
+        expires_at        TIMESTAMP NOT NULL,
+        delivered         BOOLEAN DEFAULT FALSE,
+        created_at        TIMESTAMP DEFAULT NOW()
       )
     `);
 
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_rooms_slug ON rooms(slug)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_room_messages_room_id ON room_messages(room_slug, id)`
-    );
-    await client.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_unique_event ON room_messages(room_slug, event_id)`
-    );
+    // We can drop the old tables later if it's safe and this is a completely new DB instance.
+    // However, the instructions state "Use a separate database instance for v8 — do NOT touch the v7 database"
+    // so we don't strictly need to DROP.
+
     console.log('✓ Database ready');
   } finally {
     client.release();
