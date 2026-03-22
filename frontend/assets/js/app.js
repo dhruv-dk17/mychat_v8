@@ -492,7 +492,7 @@ function handlePageUnload() {
 
 async function initChatPage() {
   const params = getChatParams();
-  if (!params.roomId || !params.username) { navigateHome(); return; }
+  if (!params.roomId || !params.username) return;
 
   currentRoomType = params.type || 'private';
   const isPerm  = params.type === 'permanent';

@@ -75,7 +75,8 @@ document.addEventListener('click', e => {
 
 // ── Navigation ────────────────────────────────────────────────────
 function navigateHome() {
-  window.location.href = 'index.html';
+  const hasSession = typeof getUserSession === 'function' && !!getUserSession();
+  window.location.href = hasSession ? 'chat.html' : 'index.html';
 }
 
 function navigateToChat(roomId, type, username, role, key) {
